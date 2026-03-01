@@ -1,73 +1,58 @@
-# Welcome to your Lovable project
+# Vibium Trace Viewer
 
-## Project info
+**URL**: [trace.vibium.dev](https://trace.vibium.dev)
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+A web-based viewer for [Playwright](https://playwright.dev/) trace files (`.zip`). Drop a `trace.zip` onto the page and instantly explore actions, screenshots, console logs, and network requests — no install required.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- **Drag & Drop** — Open any Playwright `trace.zip` by dropping it onto the viewer
+- **Action Timeline** — Step through every Playwright action (clicks, fills, navigations, assertions) with timing info
+- **Screenshot Filmstrip** — Scrub through screencast frames captured during the trace
+- **Console Logs** — View all browser console output (log, warn, error) tied to the trace timeline
+- **Network Inspector** — Browse every network request with method, status, URL, and size
+- **Context Info** — See browser, viewport, and other context options used during the test run
+- **Fully Client-Side** — Everything runs in the browser; no data is uploaded anywhere
 
-**Use Lovable**
+## Getting Started
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+### Use it online
 
-Changes made via Lovable will be committed automatically to this repo.
+Visit **[trace.vibium.dev](https://trace.vibium.dev)** and drop a `trace.zip` file onto the page.
 
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+### Run locally
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
 git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
 cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
 npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Then open `http://localhost:5173` in your browser.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## How to get a trace file
 
-**Use GitHub Codespaces**
+Playwright can generate trace files during test runs:
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```ts
+// playwright.config.ts
+export default defineConfig({
+  use: {
+    trace: 'on', // or 'on-first-retry', 'retain-on-failure'
+  },
+});
+```
 
-## What technologies are used for this project?
+After running tests, find the `.zip` files in `test-results/` and drop them into the viewer.
 
-This project is built with:
+## Tech Stack
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
+- React + Vite + TypeScript
 - Tailwind CSS
+- JSZip (loaded from CDN at runtime)
+- shadcn/ui
 
-## How can I deploy this project?
+## License
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+MIT
