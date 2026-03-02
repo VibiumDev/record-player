@@ -466,20 +466,25 @@ const CURSOR_SVG = (
 );
 
 // ─── Coordinate normalization helper ────────────────────────────────────────
-// Tries multiple coordinate bases and picks the first that keeps the point in-bounds.
+// Tries multiple coordinate bases + boost factors and picks the lowest-penalty fit.
 function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, natW, natH }) {
   if (!action?.point) return null;
 
-  const scaleFactor = dpr || 1;
+  const numericDpr = Number(dpr);
+  const scaleFactor = Number.isFinite(numericDpr) && numericDpr > 0 ? numericDpr : 1;
   const scrollX = action._snapshotMeta?.scrollX || 0;
   const scrollY = action._snapshotMeta?.scrollY || 0;
   const snapshotViewport = action._snapshotMeta?.viewport;
+  const targetViewport = snapshotViewport || viewport || null;
   const pt = action.point;
   const box = action.box;
 
-  const addCandidate = (list, coordW, coordH, offsetX, offsetY, source, ratioMode = false) => {
+  const addCandidate = (list, coordW, coordH, offsetX, offsetY, source, ratioMode = false, boosts = [1]) => {
     if (!coordW || !coordH || !Number.isFinite(coordW) || !Number.isFinite(coordH)) return;
-    list.push({ coordW, coordH, offsetX, offsetY, source, ratioMode });
+    for (const boost of boosts) {
+      if (!Number.isFinite(boost) || boost <= 0) continue;
+      list.push({ coordW, coordH, offsetX, offsetY, source, ratioMode, boost });
+    }
   };
 
   const candidates = [];
@@ -496,15 +501,18 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
     addCandidate(candidates, viewport.width, viewport.height, 0, 0, "context-viewport-ratio", true);
   }
 
+  // Boost factors help when trace coords are in CSS pixels but screenshot metadata is in device pixels.
+  const rawBoosts = [1, 2, 3];
+
   if (screenshot?.width && screenshot?.height) {
     addCandidate(candidates, screenshot.width / scaleFactor, screenshot.height / scaleFactor, 0, 0, "screenshot/dpr");
-    addCandidate(candidates, screenshot.width, screenshot.height, 0, 0, "screenshot-raw");
+    addCandidate(candidates, screenshot.width, screenshot.height, 0, 0, "screenshot-raw", false, rawBoosts);
     addCandidate(candidates, screenshot.width, screenshot.height, 0, 0, "screenshot-ratio", true);
   }
 
   if (natW && natH) {
     addCandidate(candidates, natW / scaleFactor, natH / scaleFactor, 0, 0, "natural/dpr");
-    addCandidate(candidates, natW, natH, 0, 0, "natural-raw");
+    addCandidate(candidates, natW, natH, 0, 0, "natural-raw", false, rawBoosts);
     addCandidate(candidates, natW, natH, 0, 0, "natural-ratio", true);
   }
 
@@ -520,8 +528,8 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   let bestPenalty = Infinity;
 
   for (const c of candidates) {
-    const scaleX = imgW / c.coordW;
-    const scaleY = imgH / c.coordH;
+    const scaleX = (imgW / c.coordW) * c.boost;
+    const scaleY = (imgH / c.coordH) * c.boost;
 
     const rawX = c.ratioMode ? pt.x * c.coordW : (pt.x - c.offsetX);
     const rawY = c.ratioMode ? pt.y * c.coordH : (pt.y - c.offsetY);
@@ -540,6 +548,14 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
     if (c.ratioMode && !looksRatioPoint) penalty += 10000;
     if (!c.ratioMode && looksRatioPoint) penalty += 2000;
 
+    // Prefer candidates whose effective coordinate basis matches known viewport.
+    if (targetViewport?.width && targetViewport?.height && !c.ratioMode) {
+      const effW = c.coordW / c.boost;
+      const effH = c.coordH / c.boost;
+      penalty += Math.abs(effW - targetViewport.width) * 0.03;
+      penalty += Math.abs(effH - targetViewport.height) * 0.03;
+    }
+
     let bx, by, bw, bh;
     if (box) {
       const rawBx = c.ratioMode ? box.x * c.coordW : (box.x - c.offsetX);
@@ -553,6 +569,7 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
       bh = rawBh * scaleY;
 
       if (bw <= 1 || bh <= 1) penalty += 10000;
+      if (bw < 8 || bh < 8) penalty += 250;
       if (bw > imgW * 1.4 || bh > imgH * 1.4) penalty += 6000;
 
       const boxOverflowX = Math.max(0, minX - bx) + Math.max(0, bx + bw - maxX);
@@ -565,12 +582,12 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
     }
 
     // If coords already look viewport-based, prefer zero-scroll offsets.
-    const looksViewport = pt.x >= -1 && pt.y >= -1 && pt.x <= c.coordW + 1 && pt.y <= c.coordH + 1;
+    const looksViewport = pt.x >= -1 && pt.y >= -1 && pt.x <= (c.coordW / c.boost) + 1 && pt.y <= (c.coordH / c.boost) + 1;
     if ((scrollX || scrollY) && c.offsetX === 0 && c.offsetY === 0 && looksViewport && !c.ratioMode) penalty -= 8;
 
     if (penalty < bestPenalty) {
       bestPenalty = penalty;
-      best = { scaleX, scaleY, px: normPx, py: normPy, source: c.source, coordW: c.coordW, coordH: c.coordH, bx, by, bw, bh };
+      best = { scaleX, scaleY, px: normPx, py: normPy, source: c.source, boost: c.boost, coordW: c.coordW / c.boost, coordH: c.coordH / c.boost, bx, by, bw, bh };
     }
   }
 
@@ -658,7 +675,7 @@ const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, vi
           fontSize: 10, fontFamily: "monospace", padding: "2px 6px", borderRadius: 3, zIndex: 10,
           lineHeight: 1.4, whiteSpace: "pre",
         }}>
-          {`src: ${norm.source}\ncoord: ${norm.coordW.toFixed(0)}×${norm.coordH.toFixed(0)}\nimg: ${imgW.toFixed(0)}×${imgH.toFixed(0)}\npt: ${action.point.x.toFixed(3)},${action.point.y.toFixed(3)}\nscale: ${norm.scaleX.toFixed(3)},${norm.scaleY.toFixed(3)}`}
+          {`src: ${norm.source} (x${norm.boost.toFixed(2)})\ncoord: ${norm.coordW.toFixed(0)}×${norm.coordH.toFixed(0)}\nimg: ${imgW.toFixed(0)}×${imgH.toFixed(0)}\npt: ${action.point.x.toFixed(3)},${action.point.y.toFixed(3)}\nscale: ${norm.scaleX.toFixed(3)},${norm.scaleY.toFixed(3)}`}
         </div>
       )}
     </div>
