@@ -595,9 +595,28 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
       const boxOverflowY = Math.max(0, minY - by) + Math.max(0, by + bh - maxY);
       penalty += (boxOverflowX + boxOverflowY) * 0.7;
 
-      // Strongly prefer mappings where point lands inside box.
+      // Check point-in-box. Also try with scroll-adjusted box (box in page-space, point in viewport-space).
       const pointInBox = normPx >= bx - 2 && normPx <= bx + bw + 2 && normPy >= by - 2 && normPy <= by + bh + 2;
-      if (!pointInBox) penalty += 3000;
+      if (!pointInBox) {
+        // Try adjusting box by scroll offset in case box is page-relative but point is viewport-relative
+        if ((scrollX || scrollY) && !c.ratioMode) {
+          const adjBx = (box.x - scrollX) * scaleX;
+          const adjBy = (box.y - scrollY) * scaleY;
+          const adjBw = box.width * scaleX;
+          const adjBh = box.height * scaleY;
+          const pointInAdjBox = normPx >= adjBx - 2 && normPx <= adjBx + adjBw + 2 && normPy >= adjBy - 2 && normPy <= adjBy + adjBh + 2;
+          if (pointInAdjBox && c.offsetX === 0 && c.offsetY === 0) {
+            // Point fits in scroll-adjusted box with zero point offset — use adjusted box for rendering
+            bx = adjBx; by = adjBy; bw = adjBw; bh = adjBh;
+            // Mild penalty since box needed adjustment
+            penalty += 200;
+          } else {
+            penalty += 3000;
+          }
+        } else {
+          penalty += 3000;
+        }
+      }
     }
 
     // If coords already look viewport-based, strongly prefer zero-scroll offsets.
