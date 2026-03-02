@@ -381,32 +381,42 @@ const CURSOR_SVG = (
   </svg>
 );
 
-function ActionOverlay({ action, screenshot, imgEl, V }) {
+function ActionOverlay({ action, screenshot, imgEl }) {
   if (!action || !action.point || !imgEl) return null;
+
+  // Get the img's position within its offset parent (the position:relative container)
   const nat = { w: screenshot?.width || 1, h: screenshot?.height || 1 };
-  const rect = imgEl.getBoundingClientRect();
-  // The img uses object-fit: contain, so compute the actual drawn area
+  const imgW = imgEl.clientWidth;
+  const imgH = imgEl.clientHeight;
+  if (!imgW || !imgH) return null;
+
+  // object-fit: contain — compute drawn area within the img element
   const imgAspect = nat.w / nat.h;
-  const boxAspect = rect.width / rect.height;
-  let drawW, drawH, offsetX, offsetY;
-  if (imgAspect > boxAspect) {
-    drawW = rect.width; drawH = rect.width / imgAspect;
-    offsetX = 0; offsetY = (rect.height - drawH) / 2;
+  const elAspect = imgW / imgH;
+  let drawW, drawH, padX, padY;
+  if (imgAspect > elAspect) {
+    drawW = imgW; drawH = imgW / imgAspect;
+    padX = 0; padY = (imgH - drawH) / 2;
   } else {
-    drawH = rect.height; drawW = rect.height * imgAspect;
-    offsetX = (rect.width - drawW) / 2; offsetY = 0;
+    drawH = imgH; drawW = imgH * imgAspect;
+    padX = (imgW - drawW) / 2; padY = 0;
   }
+
+  // img's offset within the container
+  const offLeft = imgEl.offsetLeft;
+  const offTop = imgEl.offsetTop;
+
   const scaleX = drawW / nat.w;
   const scaleY = drawH / nat.h;
-  const px = offsetX + action.point.x * scaleX;
-  const py = offsetY + action.point.y * scaleY;
+  const px = offLeft + padX + action.point.x * scaleX;
+  const py = offTop + padY + action.point.y * scaleY;
   const color = actionColor(action.apiName);
   const n = (action.apiName || "").toLowerCase();
   const isClick = n.includes("click") || n.includes("tap") || n.includes("dblclick");
   const isType = n.includes("fill") || n.includes("type") || n.includes("press");
 
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 5 }}>
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 5, overflow: "hidden" }}>
       <style>{`
         @keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
         @keyframes ov-blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
@@ -415,14 +425,14 @@ function ActionOverlay({ action, screenshot, imgEl, V }) {
       {action.box && (
         <div style={{
           position: "absolute",
-          left: offsetX + action.box.x * scaleX,
-          top: offsetY + action.box.y * scaleY,
+          left: offLeft + padX + action.box.x * scaleX,
+          top: offTop + padY + action.box.y * scaleY,
           width: action.box.width * scaleX,
           height: action.box.height * scaleY,
           border: `2px solid ${color}`,
           background: `${color}20`,
           borderRadius: 3,
-          transition: "left 0.2s, top 0.2s, width 0.2s, height 0.2s",
+          transition: "left 0.15s, top 0.15s, width 0.15s, height 0.15s",
         }} />
       )}
       {/* Cursor */}
@@ -430,7 +440,7 @@ function ActionOverlay({ action, screenshot, imgEl, V }) {
         position: "absolute",
         left: px,
         top: py,
-        transition: "left 0.2s ease-out, top 0.2s ease-out",
+        transition: "left 0.15s ease-out, top 0.15s ease-out",
       }}>
         {CURSOR_SVG}
       </div>
@@ -962,16 +972,17 @@ export default function TraceStudio() {
               </div>
             )}
             {currentScreenshot?.url ? (
-              <div style={{ position: "relative", maxWidth: "100%", maxHeight: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <>
                 <img
                   ref={imgRef}
                   src={currentScreenshot.url}
-                  onLoad={(e) => { setImgDims({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight }); prevPointRef.current = currentAction?.point || null; }}
+                  onLoad={(e) => { setImgDims({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight }); }}
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                <ActionOverlay action={currentAction} screenshot={currentScreenshot} imgEl={imgRef.current} V={V} />
-              </div>
+                <ActionOverlay action={currentAction} screenshot={currentScreenshot} imgEl={imgRef.current} />
+              </>
+            ) : (
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
                 {traceData.screenshots.filter(s => s.url).length === 0 ? (
