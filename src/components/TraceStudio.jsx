@@ -92,6 +92,15 @@ function processTraceEvents(events) {
       continue;
     }
 
+    if (type === "input") {
+      const existing = actionMap.get(evt.callId);
+      if (existing) {
+        if (evt.point) existing.point = evt.point;
+        if (evt.box) existing.box = evt.box;
+      }
+      continue;
+    }
+
     if (type === "after") {
       const existing = actionMap.get(evt.callId);
       if (existing) {
@@ -365,6 +374,87 @@ function parseUrlParams() {
   } catch { return { timeline: null, inspector: null, at: null }; }
 }
 
+// ─── Action Overlay (cursor, highlight, ripple, caret) ──────────────────────
+const CURSOR_SVG = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ filter: "drop-shadow(1px 2px 2px rgba(0,0,0,0.4))" }}>
+    <path d="M5 3l14 8-6.5 1.5L11 19z" fill="#fff" stroke="#000" strokeWidth="1.5" strokeLinejoin="round"/>
+  </svg>
+);
+
+function ActionOverlay({ action, screenshot, imgEl, V }) {
+  if (!action || !action.point || !imgEl) return null;
+  const nat = { w: screenshot?.width || 1, h: screenshot?.height || 1 };
+  const rect = imgEl.getBoundingClientRect();
+  // The img uses object-fit: contain, so compute the actual drawn area
+  const imgAspect = nat.w / nat.h;
+  const boxAspect = rect.width / rect.height;
+  let drawW, drawH, offsetX, offsetY;
+  if (imgAspect > boxAspect) {
+    drawW = rect.width; drawH = rect.width / imgAspect;
+    offsetX = 0; offsetY = (rect.height - drawH) / 2;
+  } else {
+    drawH = rect.height; drawW = rect.height * imgAspect;
+    offsetX = (rect.width - drawW) / 2; offsetY = 0;
+  }
+  const scaleX = drawW / nat.w;
+  const scaleY = drawH / nat.h;
+  const px = offsetX + action.point.x * scaleX;
+  const py = offsetY + action.point.y * scaleY;
+  const color = actionColor(action.apiName);
+  const n = (action.apiName || "").toLowerCase();
+  const isClick = n.includes("click") || n.includes("tap") || n.includes("dblclick");
+  const isType = n.includes("fill") || n.includes("type") || n.includes("press");
+
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 5 }}>
+      <style>{`
+        @keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
+        @keyframes ov-blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+      `}</style>
+      {/* Highlight box */}
+      {action.box && (
+        <div style={{
+          position: "absolute",
+          left: offsetX + action.box.x * scaleX,
+          top: offsetY + action.box.y * scaleY,
+          width: action.box.width * scaleX,
+          height: action.box.height * scaleY,
+          border: `2px solid ${color}`,
+          background: `${color}20`,
+          borderRadius: 3,
+          transition: "left 0.2s, top 0.2s, width 0.2s, height 0.2s",
+        }} />
+      )}
+      {/* Cursor */}
+      <div style={{
+        position: "absolute",
+        left: px,
+        top: py,
+        transition: "left 0.2s ease-out, top 0.2s ease-out",
+      }}>
+        {CURSOR_SVG}
+      </div>
+      {/* Click ripple */}
+      {isClick && (
+        <div key={action.callId} style={{
+          position: "absolute", left: px, top: py,
+          width: 40, height: 40, borderRadius: "50%",
+          border: `2px solid ${color}`,
+          animation: "ov-ripple 0.4s ease-out forwards",
+        }} />
+      )}
+      {/* Type caret */}
+      {isType && (
+        <div style={{
+          position: "absolute", left: px + 2, top: py - 8,
+          width: 2, height: 18, background: color,
+          animation: "ov-blink 0.8s step-end infinite",
+        }} />
+      )}
+    </div>
+  );
+}
+
 export default function TraceStudio() {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
@@ -421,6 +511,9 @@ export default function TraceStudio() {
     return () => { mqW.removeEventListener("change", onW); mqH.removeEventListener("change", onH); };
   }, []);
   const touchRef = useRef({ startX: 0, startY: 0 });
+  const prevPointRef = useRef(null);
+  const imgRef = useRef(null);
+  const [imgDims, setImgDims] = useState({ w: 0, h: 0 });
 
   // On mobile/compact, collapse panels
   useEffect(() => {
@@ -869,7 +962,16 @@ export default function TraceStudio() {
               </div>
             )}
             {currentScreenshot?.url ? (
-              <img src={currentScreenshot.url} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4 }} alt="trace screenshot" />
+              <div style={{ position: "relative", maxWidth: "100%", maxHeight: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <img
+                  ref={imgRef}
+                  src={currentScreenshot.url}
+                  onLoad={(e) => { setImgDims({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight }); prevPointRef.current = currentAction?.point || null; }}
+                  style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
+                  alt="trace screenshot"
+                />
+                <ActionOverlay action={currentAction} screenshot={currentScreenshot} imgEl={imgRef.current} V={V} />
+              </div>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
                 {traceData.screenshots.filter(s => s.url).length === 0 ? (
