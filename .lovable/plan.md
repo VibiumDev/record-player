@@ -1,56 +1,73 @@
 
+1) What I found in the current implementation
+- The overlay already reads the rendered image size via `getBoundingClientRect()` (`iRect.width/height`) and computes image offset relative to the preview container (`imgLeft/imgTop`), so yes, it is using the currently rendered image size.
+- The persistent “wildly misplaced” result is most likely not from missing rendered-size reads anymore; it is from using the wrong coordinate space for `action.point` / `action.box`.
+- Right now the code assumes:
+  - points/boxes are viewport coordinates, and
+  - `contextOptions.options.viewport` is always the correct basis.
+- The trace parser currently skips `frame-snapshot` events entirely. That means no scroll/frame offset context is available when mapping points/boxes.
+- If points/boxes are in page-space for some actions (or affected by frame/scroll context), highlights will be consistently offset even with correct image scaling math.
 
-# Element Highlight and Cursor Animation
+2) Proposed fix approach
+- Keep the current “measure real rendered image rect first” approach (it’s needed and correct).
+- Fix mapping by introducing an explicit coordinate normalization pipeline before rendering:
+  1. Parse and store minimal frame snapshot metadata (viewport + scroll offsets) keyed by snapshot id/name.
+  2. Link each action to the best available snapshot context (`beforeSnapshot`, `afterSnapshot`, or input-linked snapshot metadata if present).
+  3. Normalize raw `point`/`box` into viewport-space coordinates by subtracting scroll offsets when appropriate.
+  4. Map normalized viewport coordinates to rendered image coordinates.
+- Add candidate-based fallback if metadata is incomplete:
+  - Try coordinate bases in this order and pick the first that keeps point/box in-bounds (with tolerance):
+    - normalized viewport from snapshot context,
+    - context viewport,
+    - screenshot dimensions (raw),
+    - screenshot dimensions / DPR,
+    - natural image dimensions / DPR.
+- Add strict guardrails:
+  - If mapped point/box lands far outside image bounds after all attempts, do not render overlay for that action (better than rendering nonsense).
 
-## Overview
-Add visual overlays on the screenshot preview area that show cursor movement, element highlighting, and click/type effects for actions that have `input` events (containing `point` and `box` data).
+3) Concrete implementation plan (file: `src/components/TraceStudio.jsx`)
+- Update `processTraceEvents`:
+  - Stop discarding `frame-snapshot` blindly.
+  - Build a `snapshotMetaMap` with whatever fields are present (defensive parsing):
+    - snapshot identifier
+    - viewport width/height
+    - scrollX/scrollY
+    - page/frame id when available
+  - Attach snapshot-derived mapping context to actions.
+- Add a normalization helper:
+  - Input: action raw point/box + action snapshot meta + context viewport + screenshot meta + DPR.
+  - Output: `{ coordW, coordH, normalizedPoint, normalizedBox, mappingSource }`.
+  - If action coords look page-based and scroll metadata exists, convert to viewport-based first.
+- Refactor `ActionOverlay`:
+  - Use only normalized coordinates from helper.
+  - Continue using actual measured image rect for final scaling.
+  - Keep overlay anchored to the same container with `pointerEvents: none`.
+  - Add out-of-bounds protection to suppress invalid overlays.
+- Add lightweight debug mode (temporary, toggleable):
+  - Show mapping source and computed scales (`coordW/H`, `imgW/H`, scrollX/Y).
+  - This makes it easy to verify against your trace and remove ambiguity quickly.
 
-## Changes
+4) Validation steps
+- Reproduce with the same uploaded trace/screenshot scenario.
+- Step through multiple action types:
+  - click, fill/type, hover, check/select.
+- Verify at least:
+  - center-screen elements,
+  - elements after page scroll,
+  - early and late timeline positions.
+- Confirm highlight box and cursor both align with targets at different image scales (zoomed in/out preview area).
 
-### 1. Parse `input` events in `processTraceEvents`
-Currently, `input` events are silently ignored. Add handling in the event loop to attach `point` and `box` data to the matching action via `callId`.
+5) Risks and mitigations
+- Risk: Trace schema variations across versions (field names differ).
+  - Mitigation: defensive parser with multiple field fallbacks and graceful degradation.
+- Risk: Some actions may have incomplete metadata.
+  - Mitigation: candidate fallback mapping + safe hide if invalid.
+- Risk: iframe-related offsets.
+  - Mitigation: preserve frame/page identifiers in snapshot metadata and prefer matching context when available.
 
-- When `type === "input"`, look up the action in `actionMap` by `callId`
-- Store `evt.point` and `evt.box` on the action object
-
-### 2. Add overlay layer on the screenshot preview
-The screenshot area (around line 871) currently renders a plain `<img>`. Wrap it in a container with `position: relative` and add an SVG/div overlay on top that draws:
-
-- **Highlight rectangle**: Semi-transparent colored box at the `box` coordinates of the current action, with a subtle border matching the action color
-- **Cursor indicator**: A small cursor icon positioned at `point`, animated to move from the previous action's point to the current one
-- **Click ripple**: For click/tap/dblclick actions, an expanding ring animation at `point`
-- **Type indicator**: For fill/type actions, a blinking text cursor at `point`
-
-### 3. Coordinate mapping
-The overlay must scale coordinates to match the displayed screenshot size. Use the screenshot's natural dimensions (`currentScreenshot.width`, `currentScreenshot.height`) and the rendered `<img>` element's actual size to compute scale factors. A `ref` on the image element and a `ResizeObserver` (or `onLoad` handler) will track the rendered dimensions.
-
-### 4. Cursor animation
-Track the previous action's `point` to animate cursor movement using CSS transitions (or a brief `requestAnimationFrame` tween). When the playhead moves to a new action:
-- Animate cursor from `prevPoint` to `currentPoint` over ~200ms
-- Then trigger the action-specific effect (ripple or type cursor)
-
-### 5. Implementation details
-
-**State additions:**
-- `prevPoint` — ref tracking the last cursor position for animation
-
-**New sub-component (inline):**
-- `ActionOverlay` — renders inside the screenshot container, receives `currentAction`, `currentScreenshot`, image dimensions, and previous point
-- Uses CSS `transition` on `left`/`top` for smooth cursor movement
-- Uses CSS `@keyframes` (injected via `<style>`) for ripple and blink effects
-
-**Event types to handle:**
-- Click/tap/dblclick: highlight box + cursor move + ripple
-- Fill/type/press: highlight box + cursor move + blinking caret
-- Hover/check/uncheck/select: highlight box + cursor move (no extra effect)
-- No `input` event: no overlay shown
-
-## Technical Notes
-
-- All rendering is done with absolutely-positioned divs over the screenshot image — no canvas needed
-- The highlight box uses the action's color at ~20% opacity with a 2px solid border
-- The cursor is a small SVG pointer icon (standard arrow cursor shape, ~20px)
-- Ripple effect: a circle expanding from 0 to ~40px radius, fading from 60% to 0% opacity over 400ms
-- Coordinate scaling: `displayX = point.x * (imgRenderedWidth / screenshotNaturalWidth)`, same for Y
-- The overlay is pointer-events: none so it doesn't interfere with swipe/click interactions
-- Only shown when `currentAction` has a `point` property (i.e., had an `input` event)
+6) Expected outcome
+- Overlay positioning will be based on:
+  - real rendered image dimensions,
+  - corrected action coordinates (including scroll/frame context),
+  - robust fallback logic when metadata is partial.
+- This should eliminate the large offset/scaling failures you’re currently seeing instead of just shifting the error between viewport/DPR assumptions.
