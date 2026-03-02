@@ -384,32 +384,28 @@ const CURSOR_SVG = (
 function ActionOverlay({ action, screenshot, imgEl }) {
   if (!action || !action.point || !imgEl) return null;
 
-  // Get the img's position within its offset parent (the position:relative container)
-  const nat = { w: screenshot?.width || 1, h: screenshot?.height || 1 };
   const imgW = imgEl.clientWidth;
   const imgH = imgEl.clientHeight;
+  const natW = imgEl.naturalWidth || 1;
+  const natH = imgEl.naturalHeight || 1;
   if (!imgW || !imgH) return null;
 
-  // object-fit: contain — compute drawn area within the img element
-  const imgAspect = nat.w / nat.h;
-  const elAspect = imgW / imgH;
-  let drawW, drawH, padX, padY;
-  if (imgAspect > elAspect) {
-    drawW = imgW; drawH = imgW / imgAspect;
-    padX = 0; padY = (imgH - drawH) / 2;
-  } else {
-    drawH = imgH; drawW = imgH * imgAspect;
-    padX = (imgW - drawW) / 2; padY = 0;
-  }
+  // With maxWidth/maxHeight constraints (no explicit w/h), the img element
+  // sizes itself to maintain aspect ratio, so clientWidth/clientHeight IS
+  // the drawn area. No object-fit padding needed.
+  // The trace point/box are in viewport coords matching screenshot.width/height,
+  // but the image pixels may differ (e.g. 2x DPR). Use the screenshot dims
+  // as the coordinate space, falling back to natural dims.
+  const coordW = screenshot?.width || natW;
+  const coordH = screenshot?.height || natH;
 
-  // img's offset within the container
   const offLeft = imgEl.offsetLeft;
   const offTop = imgEl.offsetTop;
 
-  const scaleX = drawW / nat.w;
-  const scaleY = drawH / nat.h;
-  const px = offLeft + padX + action.point.x * scaleX;
-  const py = offTop + padY + action.point.y * scaleY;
+  const scaleX = imgW / coordW;
+  const scaleY = imgH / coordH;
+  const px = offLeft + action.point.x * scaleX;
+  const py = offTop + action.point.y * scaleY;
   const color = actionColor(action.apiName);
   const n = (action.apiName || "").toLowerCase();
   const isClick = n.includes("click") || n.includes("tap") || n.includes("dblclick");
@@ -425,8 +421,8 @@ function ActionOverlay({ action, screenshot, imgEl }) {
       {action.box && (
         <div style={{
           position: "absolute",
-          left: offLeft + padX + action.box.x * scaleX,
-          top: offTop + padY + action.box.y * scaleY,
+          left: offLeft + action.box.x * scaleX,
+          top: offTop + action.box.y * scaleY,
           width: action.box.width * scaleX,
           height: action.box.height * scaleY,
           border: `2px solid ${color}`,
