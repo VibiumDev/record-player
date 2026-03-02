@@ -381,7 +381,7 @@ const CURSOR_SVG = (
   </svg>
 );
 
-function ActionOverlay({ action, screenshot, imgEl }) {
+function ActionOverlay({ action, screenshot, viewport, imgEl }) {
   if (!action || !action.point || !imgEl) return null;
 
   const imgW = imgEl.clientWidth;
@@ -390,14 +390,47 @@ function ActionOverlay({ action, screenshot, imgEl }) {
   const natH = imgEl.naturalHeight || 1;
   if (!imgW || !imgH) return null;
 
-  // With maxWidth/maxHeight constraints (no explicit w/h), the img element
-  // sizes itself to maintain aspect ratio, so clientWidth/clientHeight IS
-  // the drawn area. No object-fit padding needed.
-  // The trace point/box are in viewport coords matching screenshot.width/height,
-  // but the image pixels may differ (e.g. 2x DPR). Use the screenshot dims
-  // as the coordinate space, falling back to natural dims.
-  const coordW = screenshot?.width || natW;
-  const coordH = screenshot?.height || natH;
+  // Traces can store point/box in viewport coords while screencast frames may
+  // have a different pixel size. Pick the best coordinate space dynamically.
+  const candidates = [
+    screenshot?.width && screenshot?.height ? { w: screenshot.width, h: screenshot.height } : null,
+    viewport?.width && viewport?.height ? { w: viewport.width, h: viewport.height } : null,
+    { w: natW, h: natH },
+  ].filter(Boolean);
+
+  let best = candidates[0] || { w: natW, h: natH };
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const c of candidates) {
+    const sx = imgW / c.w;
+    const sy = imgH / c.h;
+    const pxTest = action.point.x * sx;
+    const pyTest = action.point.y * sy;
+
+    let overflow =
+      Math.max(0, -pxTest) + Math.max(0, pxTest - imgW) +
+      Math.max(0, -pyTest) + Math.max(0, pyTest - imgH);
+
+    if (action.box) {
+      const l = action.box.x * sx;
+      const t = action.box.y * sy;
+      const r = (action.box.x + action.box.width) * sx;
+      const b = (action.box.y + action.box.height) * sy;
+      overflow +=
+        Math.max(0, -l) + Math.max(0, r - imgW) +
+        Math.max(0, -t) + Math.max(0, b - imgH);
+    }
+
+    const aspectPenalty = Math.abs((c.w / c.h) - (natW / natH)) * 100;
+    const score = overflow * 10 + aspectPenalty;
+    if (score < bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+
+  const coordW = best.w;
+  const coordH = best.h;
 
   const offLeft = imgEl.offsetLeft;
   const offTop = imgEl.offsetTop;
@@ -976,7 +1009,7 @@ export default function TraceStudio() {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                <ActionOverlay action={currentAction} screenshot={currentScreenshot} imgEl={imgRef.current} />
+                <ActionOverlay action={currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} imgEl={imgRef.current} />
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
