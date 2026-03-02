@@ -983,7 +983,6 @@ export default function TraceStudio() {
                 <ActionOverlay action={currentAction} screenshot={currentScreenshot} imgEl={imgRef.current} />
               </>
             ) : (
-            ) : (
               <div style={{ textAlign: "center", color: V.border }}>
                 {traceData.screenshots.filter(s => s.url).length === 0 ? (
                   <>
