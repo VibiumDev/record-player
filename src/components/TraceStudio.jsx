@@ -44,6 +44,8 @@ function processTraceEvents(events) {
   const actionMap = new Map();
   const groups = [];
   const groupCallIds = new Set();
+  // Map snapshot name/id → metadata (viewport, scroll offsets)
+  const snapshotMetaMap = new Map();
 
   for (const evt of events) {
     const type = evt.type;
@@ -53,8 +55,27 @@ function processTraceEvents(events) {
       continue;
     }
 
-    // Skip frame-snapshot (DOM snapshots — not used in our viewer)
-    if (type === "frame-snapshot") continue;
+    // Parse frame-snapshot for viewport & scroll metadata
+    if (type === "frame-snapshot") {
+      const snapshotName = evt.snapshot || evt.snapshotName || evt.title || evt.callId;
+      if (snapshotName) {
+        const meta = {
+          snapshotName,
+          viewport: evt.viewport || evt.viewportSize || null,
+          scrollX: evt.scrollX ?? evt.scrollLeft ?? evt.scrollOffset?.x ?? 0,
+          scrollY: evt.scrollY ?? evt.scrollTop ?? evt.scrollOffset?.y ?? 0,
+          pageId: evt.pageId || evt.frameId || null,
+        };
+        // Also try to extract viewport from nested structures
+        if (!meta.viewport && evt.snapshot && typeof evt.snapshot === "object") {
+          meta.viewport = evt.snapshot.viewport || null;
+          meta.scrollX = evt.snapshot.scrollX ?? evt.snapshot.scrollLeft ?? meta.scrollX;
+          meta.scrollY = evt.snapshot.scrollY ?? evt.snapshot.scrollTop ?? meta.scrollY;
+        }
+        snapshotMetaMap.set(snapshotName, meta);
+      }
+      continue;
+    }
 
     const apiName = evt.title || (evt.class && evt.method ? `${evt.class}.${evt.method}` : "");
 
@@ -145,11 +166,19 @@ function processTraceEvents(events) {
     }
   }
 
+  // Attach snapshot metadata to actions
+  for (const action of actions) {
+    const snapName = action.beforeSnapshot || action.afterSnapshot;
+    if (snapName && snapshotMetaMap.has(snapName)) {
+      action._snapshotMeta = snapshotMetaMap.get(snapName);
+    }
+  }
+
   actions.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
   consoleEvents.sort((a, b) => (a.time || 0) - (b.time || 0));
   screenshotRefs.sort((a, b) => (a.time || 0) - (b.time || 0));
 
-  return { actions, consoleEvents, contextOptions, screenshotRefs, groups };
+  return { actions, consoleEvents, contextOptions, screenshotRefs, groups, snapshotMetaMap };
 }
 
 // ─── Parse network events (BiDi format) ─────────────────────────────────────
@@ -381,7 +410,131 @@ const CURSOR_SVG = (
   </svg>
 );
 
-function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl }) {
+// ─── Coordinate normalization helper ────────────────────────────────────────
+// Tries multiple coordinate bases and picks the first that keeps the point in-bounds.
+function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, natW, natH }) {
+  if (!action?.point) return null;
+
+  const scaleFactor = dpr || 1;
+  const scrollX = action._snapshotMeta?.scrollX || 0;
+  const scrollY = action._snapshotMeta?.scrollY || 0;
+  const snapshotViewport = action._snapshotMeta?.viewport;
+
+  // Build candidate coordinate bases in priority order
+  const candidates = [];
+
+  // 1. Snapshot-derived viewport with scroll correction
+  if (snapshotViewport?.width && snapshotViewport?.height) {
+    candidates.push({
+      coordW: snapshotViewport.width,
+      coordH: snapshotViewport.height,
+      offsetX: scrollX,
+      offsetY: scrollY,
+      source: "snapshot-viewport",
+    });
+  }
+
+  // 2. Context viewport (from contextOptions)
+  if (viewport?.width && viewport?.height) {
+    candidates.push({
+      coordW: viewport.width,
+      coordH: viewport.height,
+      offsetX: scrollX,
+      offsetY: scrollY,
+      source: "context-viewport",
+    });
+    // Also try without scroll offset
+    if (scrollX || scrollY) {
+      candidates.push({
+        coordW: viewport.width,
+        coordH: viewport.height,
+        offsetX: 0,
+        offsetY: 0,
+        source: "context-viewport-no-scroll",
+      });
+    }
+  }
+
+  // 3. Screenshot dimensions / DPR
+  if (screenshot?.width && screenshot?.height) {
+    candidates.push({
+      coordW: screenshot.width / scaleFactor,
+      coordH: screenshot.height / scaleFactor,
+      offsetX: 0,
+      offsetY: 0,
+      source: "screenshot/dpr",
+    });
+    // Also try raw screenshot dimensions
+    candidates.push({
+      coordW: screenshot.width,
+      coordH: screenshot.height,
+      offsetX: 0,
+      offsetY: 0,
+      source: "screenshot-raw",
+    });
+  }
+
+  // 4. Natural image dimensions / DPR
+  if (natW && natH) {
+    candidates.push({
+      coordW: natW / scaleFactor,
+      coordH: natH / scaleFactor,
+      offsetX: 0,
+      offsetY: 0,
+      source: "natural/dpr",
+    });
+    candidates.push({
+      coordW: natW,
+      coordH: natH,
+      offsetX: 0,
+      offsetY: 0,
+      source: "natural-raw",
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  const pt = action.point;
+  const box = action.box;
+  const tolerance = 0.15; // 15% out-of-bounds tolerance
+
+  for (const c of candidates) {
+    const scaleX = imgW / c.coordW;
+    const scaleY = imgH / c.coordH;
+    const normPx = (pt.x - c.offsetX) * scaleX;
+    const normPy = (pt.y - c.offsetY) * scaleY;
+
+    // Check if point is within image bounds (with tolerance)
+    const minX = -imgW * tolerance;
+    const maxX = imgW * (1 + tolerance);
+    const minY = -imgH * tolerance;
+    const maxY = imgH * (1 + tolerance);
+
+    if (normPx >= minX && normPx <= maxX && normPy >= minY && normPy <= maxY) {
+      const result = {
+        scaleX,
+        scaleY,
+        px: normPx,
+        py: normPy,
+        source: c.source,
+        coordW: c.coordW,
+        coordH: c.coordH,
+      };
+      if (box) {
+        result.bx = (box.x - c.offsetX) * scaleX;
+        result.by = (box.y - c.offsetY) * scaleY;
+        result.bw = box.width * scaleX;
+        result.bh = box.height * scaleY;
+      }
+      return result;
+    }
+  }
+
+  // All candidates failed — suppress overlay
+  return null;
+}
+
+function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl, showDebug }) {
   if (!action || !action.point || !imgEl || !containerEl) return null;
 
   const natW = imgEl.naturalWidth || 1;
@@ -398,19 +551,11 @@ function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl }
   const imgW = iRect.width;
   const imgH = iRect.height;
 
-  // point/box are in CSS viewport coordinates.
-  // Determine the viewport coordinate space:
-  // 1. Explicit viewport from context options (best)
-  // 2. Screenshot dimensions / DPR
-  // 3. Natural image dimensions / DPR
-  const scaleFactor = dpr || 1;
-  const coordW = viewport?.width || (screenshot?.width ? screenshot.width / scaleFactor : natW / scaleFactor);
-  const coordH = viewport?.height || (screenshot?.height ? screenshot.height / scaleFactor : natH / scaleFactor);
+  const norm = normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, natW, natH });
+  if (!norm) return null; // Out-of-bounds — suppress
 
-  const scaleX = imgW / coordW;
-  const scaleY = imgH / coordH;
-  const px = imgLeft + action.point.x * scaleX;
-  const py = imgTop + action.point.y * scaleY;
+  const px = imgLeft + norm.px;
+  const py = imgTop + norm.py;
   const color = actionColor(action.apiName);
   const n = (action.apiName || "").toLowerCase();
   const isClick = n.includes("click") || n.includes("tap") || n.includes("dblclick");
@@ -423,13 +568,13 @@ function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl }
         @keyframes ov-blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
       `}</style>
       {/* Highlight box */}
-      {action.box && (
+      {norm.bx != null && (
         <div style={{
           position: "absolute",
-          left: imgLeft + action.box.x * scaleX,
-          top: imgTop + action.box.y * scaleY,
-          width: action.box.width * scaleX,
-          height: action.box.height * scaleY,
+          left: imgLeft + norm.bx,
+          top: imgTop + norm.by,
+          width: norm.bw,
+          height: norm.bh,
           border: `2px solid ${color}`,
           background: `${color}20`,
           borderRadius: 3,
@@ -461,6 +606,16 @@ function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl }
           width: 2, height: 18, background: color,
           animation: "ov-blink 0.8s step-end infinite",
         }} />
+      )}
+      {/* Debug badge */}
+      {showDebug && (
+        <div style={{
+          position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,0.8)", color: "#0f0",
+          fontSize: 10, fontFamily: "monospace", padding: "2px 6px", borderRadius: 3, zIndex: 10,
+          lineHeight: 1.4, whiteSpace: "pre",
+        }}>
+          {`src: ${norm.source}\ncoord: ${norm.coordW.toFixed(0)}×${norm.coordH.toFixed(0)}\nimg: ${imgW.toFixed(0)}×${imgH.toFixed(0)}\npt: ${action.point.x.toFixed(1)},${action.point.y.toFixed(1)}\nscale: ${norm.scaleX.toFixed(3)},${norm.scaleY.toFixed(3)}`}
+        </div>
       )}
     </div>
   );
