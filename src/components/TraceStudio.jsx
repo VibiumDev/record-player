@@ -46,6 +46,26 @@ function processTraceEvents(events) {
   const groupCallIds = new Set();
   // Map snapshot name/id → metadata (viewport, scroll offsets)
   const snapshotMetaMap = new Map();
+  const snapshotMetaList = [];
+
+  const normalizeViewport = (v) => {
+    if (!v) return null;
+    if (Array.isArray(v) && v.length >= 2) {
+      const width = Number(v[0]);
+      const height = Number(v[1]);
+      return Number.isFinite(width) && Number.isFinite(height) ? { width, height } : null;
+    }
+    const width = Number(v.width ?? v.w);
+    const height = Number(v.height ?? v.h);
+    return Number.isFinite(width) && Number.isFinite(height) ? { width, height } : null;
+  };
+
+  const setSnapshotAlias = (key, meta) => {
+    if (key == null) return;
+    const k = String(key);
+    if (!k) return;
+    snapshotMetaMap.set(k, meta);
+  };
 
   for (const evt of events) {
     const type = evt.type;
@@ -57,23 +77,35 @@ function processTraceEvents(events) {
 
     // Parse frame-snapshot for viewport & scroll metadata
     if (type === "frame-snapshot") {
-      const snapshotName = evt.snapshot || evt.snapshotName || evt.title || evt.callId;
-      if (snapshotName) {
-        const meta = {
-          snapshotName,
-          viewport: evt.viewport || evt.viewportSize || null,
-          scrollX: evt.scrollX ?? evt.scrollLeft ?? evt.scrollOffset?.x ?? 0,
-          scrollY: evt.scrollY ?? evt.scrollTop ?? evt.scrollOffset?.y ?? 0,
-          pageId: evt.pageId || evt.frameId || null,
-        };
-        // Also try to extract viewport from nested structures
-        if (!meta.viewport && evt.snapshot && typeof evt.snapshot === "object") {
-          meta.viewport = evt.snapshot.viewport || null;
-          meta.scrollX = evt.snapshot.scrollX ?? evt.snapshot.scrollLeft ?? meta.scrollX;
-          meta.scrollY = evt.snapshot.scrollY ?? evt.snapshot.scrollTop ?? meta.scrollY;
-        }
-        snapshotMetaMap.set(snapshotName, meta);
-      }
+      const nestedSnapshot = evt.snapshot && typeof evt.snapshot === "object" ? evt.snapshot : null;
+      const meta = {
+        viewport:
+          normalizeViewport(evt.viewport) ||
+          normalizeViewport(evt.viewportSize) ||
+          normalizeViewport(nestedSnapshot?.viewport) ||
+          normalizeViewport(nestedSnapshot?.viewportSize) ||
+          null,
+        scrollX: Number(evt.scrollX ?? evt.scrollLeft ?? evt.scrollOffset?.x ?? nestedSnapshot?.scrollX ?? nestedSnapshot?.scrollLeft ?? 0) || 0,
+        scrollY: Number(evt.scrollY ?? evt.scrollTop ?? evt.scrollOffset?.y ?? nestedSnapshot?.scrollY ?? nestedSnapshot?.scrollTop ?? 0) || 0,
+        pageId: evt.pageId || evt.frameId || nestedSnapshot?.pageId || nestedSnapshot?.frameId || null,
+        time: Number(evt.timestamp ?? evt.time ?? evt.startTime ?? 0) || 0,
+      };
+
+      // Register all likely snapshot id aliases
+      const aliases = [
+        typeof evt.snapshot === "string" ? evt.snapshot : null,
+        evt.snapshotName,
+        evt.snapshotId,
+        evt.name,
+        evt.title,
+        evt.callId,
+        nestedSnapshot?.snapshotName,
+        nestedSnapshot?.name,
+        nestedSnapshot?.id,
+      ];
+      for (const a of aliases) setSnapshotAlias(a, meta);
+
+      snapshotMetaList.push(meta);
       continue;
     }
 
@@ -168,10 +200,33 @@ function processTraceEvents(events) {
 
   // Attach snapshot metadata to actions
   for (const action of actions) {
-    const snapName = action.beforeSnapshot || action.afterSnapshot;
-    if (snapName && snapshotMetaMap.has(snapName)) {
-      action._snapshotMeta = snapshotMetaMap.get(snapName);
+    const snapCandidates = [action.beforeSnapshot, action.afterSnapshot].filter(Boolean).map(String);
+
+    let meta = null;
+    for (const snapName of snapCandidates) {
+      if (snapshotMetaMap.has(snapName)) {
+        meta = snapshotMetaMap.get(snapName);
+        break;
+      }
     }
+
+    // Fallback: nearest frame-snapshot in time (prefer same page when available)
+    if (!meta && snapshotMetaList.length) {
+      const targetTime = Number(action.startTime ?? action.endTime ?? 0) || 0;
+      let best = null;
+      let bestDist = Infinity;
+      for (const cand of snapshotMetaList) {
+        if (action.pageId && cand.pageId && action.pageId !== cand.pageId) continue;
+        const dist = Math.abs((cand.time || 0) - targetTime);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = cand;
+        }
+      }
+      meta = best;
+    }
+
+    if (meta) action._snapshotMeta = meta;
   }
 
   actions.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
@@ -419,84 +474,50 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   const scrollX = action._snapshotMeta?.scrollX || 0;
   const scrollY = action._snapshotMeta?.scrollY || 0;
   const snapshotViewport = action._snapshotMeta?.viewport;
+  const pt = action.point;
+  const box = action.box;
 
   // Build candidate coordinate bases in priority order
   const candidates = [];
 
-  // 1. Snapshot-derived viewport with scroll correction
+  // 1. Snapshot-derived viewport
   if (snapshotViewport?.width && snapshotViewport?.height) {
-    candidates.push({
-      coordW: snapshotViewport.width,
-      coordH: snapshotViewport.height,
-      offsetX: scrollX,
-      offsetY: scrollY,
-      source: "snapshot-viewport",
-    });
+    candidates.push({ coordW: snapshotViewport.width, coordH: snapshotViewport.height, offsetX: 0, offsetY: 0, source: "snapshot-viewport" });
+    if (scrollX || scrollY) {
+      candidates.push({ coordW: snapshotViewport.width, coordH: snapshotViewport.height, offsetX: scrollX, offsetY: scrollY, source: "snapshot-viewport-scroll" });
+    }
   }
 
   // 2. Context viewport (from contextOptions)
   if (viewport?.width && viewport?.height) {
-    candidates.push({
-      coordW: viewport.width,
-      coordH: viewport.height,
-      offsetX: scrollX,
-      offsetY: scrollY,
-      source: "context-viewport",
-    });
-    // Also try without scroll offset
+    candidates.push({ coordW: viewport.width, coordH: viewport.height, offsetX: 0, offsetY: 0, source: "context-viewport" });
     if (scrollX || scrollY) {
-      candidates.push({
-        coordW: viewport.width,
-        coordH: viewport.height,
-        offsetX: 0,
-        offsetY: 0,
-        source: "context-viewport-no-scroll",
-      });
+      candidates.push({ coordW: viewport.width, coordH: viewport.height, offsetX: scrollX, offsetY: scrollY, source: "context-viewport-scroll" });
     }
   }
 
-  // 3. Screenshot dimensions / DPR
+  // 3. Screenshot dimensions
   if (screenshot?.width && screenshot?.height) {
-    candidates.push({
-      coordW: screenshot.width / scaleFactor,
-      coordH: screenshot.height / scaleFactor,
-      offsetX: 0,
-      offsetY: 0,
-      source: "screenshot/dpr",
-    });
-    // Also try raw screenshot dimensions
-    candidates.push({
-      coordW: screenshot.width,
-      coordH: screenshot.height,
-      offsetX: 0,
-      offsetY: 0,
-      source: "screenshot-raw",
-    });
+    candidates.push({ coordW: screenshot.width / scaleFactor, coordH: screenshot.height / scaleFactor, offsetX: 0, offsetY: 0, source: "screenshot/dpr" });
+    candidates.push({ coordW: screenshot.width, coordH: screenshot.height, offsetX: 0, offsetY: 0, source: "screenshot-raw" });
   }
 
-  // 4. Natural image dimensions / DPR
+  // 4. Natural image dimensions
   if (natW && natH) {
-    candidates.push({
-      coordW: natW / scaleFactor,
-      coordH: natH / scaleFactor,
-      offsetX: 0,
-      offsetY: 0,
-      source: "natural/dpr",
-    });
-    candidates.push({
-      coordW: natW,
-      coordH: natH,
-      offsetX: 0,
-      offsetY: 0,
-      source: "natural-raw",
-    });
+    candidates.push({ coordW: natW / scaleFactor, coordH: natH / scaleFactor, offsetX: 0, offsetY: 0, source: "natural/dpr" });
+    candidates.push({ coordW: natW, coordH: natH, offsetX: 0, offsetY: 0, source: "natural-raw" });
   }
 
   if (candidates.length === 0) return null;
 
-  const pt = action.point;
-  const box = action.box;
-  const tolerance = 0.15; // 15% out-of-bounds tolerance
+  const tolerance = 0.15;
+  const minX = -imgW * tolerance;
+  const maxX = imgW * (1 + tolerance);
+  const minY = -imgH * tolerance;
+  const maxY = imgH * (1 + tolerance);
+
+  let best = null;
+  let bestPenalty = Infinity;
 
   for (const c of candidates) {
     const scaleX = imgW / c.coordW;
@@ -504,14 +525,39 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
     const normPx = (pt.x - c.offsetX) * scaleX;
     const normPy = (pt.y - c.offsetY) * scaleY;
 
-    // Check if point is within image bounds (with tolerance)
-    const minX = -imgW * tolerance;
-    const maxX = imgW * (1 + tolerance);
-    const minY = -imgH * tolerance;
-    const maxY = imgH * (1 + tolerance);
+    // Lower penalty is better; 0 means ideal in-bounds mapping
+    let penalty = 0;
 
-    if (normPx >= minX && normPx <= maxX && normPy >= minY && normPy <= maxY) {
-      const result = {
+    if (normPx < minX) penalty += (minX - normPx);
+    if (normPx > maxX) penalty += (normPx - maxX);
+    if (normPy < minY) penalty += (minY - normPy);
+    if (normPy > maxY) penalty += (normPy - maxY);
+
+    let bx, by, bw, bh;
+    if (box) {
+      bx = (box.x - c.offsetX) * scaleX;
+      by = (box.y - c.offsetY) * scaleY;
+      bw = box.width * scaleX;
+      bh = box.height * scaleY;
+
+      // Penalize impossible/huge box mappings
+      if (bw <= 1 || bh <= 1) penalty += 10000;
+      if (bw > imgW * 1.5 || bh > imgH * 1.5) penalty += 5000;
+
+      const boxOverflowX = Math.max(0, minX - bx) + Math.max(0, bx + bw - maxX);
+      const boxOverflowY = Math.max(0, minY - by) + Math.max(0, by + bh - maxY);
+      penalty += (boxOverflowX + boxOverflowY) * 0.5;
+    }
+
+    // Prefer non-scroll candidates when coordinates already look viewport-based
+    if ((scrollX || scrollY) && c.offsetX === 0 && c.offsetY === 0) {
+      const looksViewport = pt.x >= -1 && pt.y >= -1 && pt.x <= c.coordW + 1 && pt.y <= c.coordH + 1;
+      if (looksViewport) penalty -= 5;
+    }
+
+    if (penalty < bestPenalty) {
+      bestPenalty = penalty;
+      best = {
         scaleX,
         scaleY,
         px: normPx,
@@ -519,19 +565,18 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
         source: c.source,
         coordW: c.coordW,
         coordH: c.coordH,
+        bx,
+        by,
+        bw,
+        bh,
       };
-      if (box) {
-        result.bx = (box.x - c.offsetX) * scaleX;
-        result.by = (box.y - c.offsetY) * scaleY;
-        result.bw = box.width * scaleX;
-        result.bh = box.height * scaleY;
-      }
-      return result;
     }
   }
 
-  // All candidates failed — suppress overlay
-  return null;
+  // Suppress only if even best candidate is far out-of-bounds
+  if (!best || bestPenalty > Math.max(imgW, imgH) * 0.6) return null;
+
+  return best;
 }
 
 function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl, showDebug }) {
