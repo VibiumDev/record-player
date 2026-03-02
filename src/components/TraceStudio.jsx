@@ -502,7 +502,16 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   }
 
   // Boost factors help when trace coords are in CSS pixels but screenshot metadata is in device pixels.
-  const rawBoosts = [1, 2, 3];
+  const inferredBoosts = Array.from(new Set([
+    1,
+    2,
+    3,
+    ...(targetViewport?.width && screenshot?.width ? [Math.round(screenshot.width / targetViewport.width)] : []),
+    ...(targetViewport?.width && natW ? [Math.round(natW / targetViewport.width)] : []),
+    ...(targetViewport?.height && screenshot?.height ? [Math.round(screenshot.height / targetViewport.height)] : []),
+    ...(targetViewport?.height && natH ? [Math.round(natH / targetViewport.height)] : []),
+  ].filter((b) => Number.isFinite(b) && b >= 1 && b <= 4)));
+  const rawBoosts = inferredBoosts;
 
   if (screenshot?.width && screenshot?.height) {
     addCandidate(candidates, screenshot.width / scaleFactor, screenshot.height / scaleFactor, 0, 0, "screenshot/dpr");
@@ -554,6 +563,10 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
       const effH = c.coordH / c.boost;
       penalty += Math.abs(effW - targetViewport.width) * 0.03;
       penalty += Math.abs(effH - targetViewport.height) * 0.03;
+
+      const inferredMaxBoost = Math.max(...inferredBoosts);
+      if (inferredMaxBoost >= 2 && c.boost === 1) penalty += 120;
+      if (c.boost > 1 && inferredBoosts.includes(c.boost)) penalty -= 120;
     }
 
     let bx, by, bw, bh;
@@ -682,7 +695,7 @@ const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, vi
   );
 });
 
-export default function TraceStudio() {
+const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1877,4 +1890,6 @@ export default function TraceStudio() {
       )}
     </div>
   );
-}
+});
+
+export default TraceStudio;
