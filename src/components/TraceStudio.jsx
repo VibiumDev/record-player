@@ -1013,10 +1013,17 @@ export default function TraceStudio() {
   // ─── Current action ─────────────────────────────────────────────────────
   const currentAction = useMemo(() => {
     if (!traceData) return null;
-    for (const a of traceData.actions) {
-      if (playhead >= a.startTime && playhead <= a.endTime + 200) return a;
-    }
-    return null;
+
+    // Multiple actions can overlap; choose the most recent one at playhead.
+    const candidates = traceData.actions.filter((a) => playhead >= (a.startTime || 0) - 20 && playhead <= (a.endTime || a.startTime || 0) + 220);
+    if (!candidates.length) return null;
+
+    return candidates.reduce((best, a) => {
+      if (!best) return a;
+      const aStart = a.startTime || 0;
+      const bStart = best.startTime || 0;
+      return aStart >= bStart ? a : best;
+    }, null);
   }, [playhead, traceData]);
 
   const currentGroup = useMemo(() => {
@@ -1182,7 +1189,7 @@ export default function TraceStudio() {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                <ActionOverlay action={currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />
+                <ActionOverlay action={selectedAction && Math.abs((selectedAction.startTime || 0) - playhead) < 350 ? selectedAction : currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
