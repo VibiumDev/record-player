@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, forwardRef } from "react";
 
 /*
   Vibium Trace — trace.vibium.dev
@@ -477,40 +477,40 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   const pt = action.point;
   const box = action.box;
 
-  // Build candidate coordinate bases in priority order
+  const addCandidate = (list, coordW, coordH, offsetX, offsetY, source, ratioMode = false) => {
+    if (!coordW || !coordH || !Number.isFinite(coordW) || !Number.isFinite(coordH)) return;
+    list.push({ coordW, coordH, offsetX, offsetY, source, ratioMode });
+  };
+
   const candidates = [];
 
-  // 1. Snapshot-derived viewport
   if (snapshotViewport?.width && snapshotViewport?.height) {
-    candidates.push({ coordW: snapshotViewport.width, coordH: snapshotViewport.height, offsetX: 0, offsetY: 0, source: "snapshot-viewport" });
-    if (scrollX || scrollY) {
-      candidates.push({ coordW: snapshotViewport.width, coordH: snapshotViewport.height, offsetX: scrollX, offsetY: scrollY, source: "snapshot-viewport-scroll" });
-    }
+    addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, 0, 0, "snapshot-viewport");
+    if (scrollX || scrollY) addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, scrollX, scrollY, "snapshot-viewport-scroll");
+    addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, 0, 0, "snapshot-viewport-ratio", true);
   }
 
-  // 2. Context viewport (from contextOptions)
   if (viewport?.width && viewport?.height) {
-    candidates.push({ coordW: viewport.width, coordH: viewport.height, offsetX: 0, offsetY: 0, source: "context-viewport" });
-    if (scrollX || scrollY) {
-      candidates.push({ coordW: viewport.width, coordH: viewport.height, offsetX: scrollX, offsetY: scrollY, source: "context-viewport-scroll" });
-    }
+    addCandidate(candidates, viewport.width, viewport.height, 0, 0, "context-viewport");
+    if (scrollX || scrollY) addCandidate(candidates, viewport.width, viewport.height, scrollX, scrollY, "context-viewport-scroll");
+    addCandidate(candidates, viewport.width, viewport.height, 0, 0, "context-viewport-ratio", true);
   }
 
-  // 3. Screenshot dimensions
   if (screenshot?.width && screenshot?.height) {
-    candidates.push({ coordW: screenshot.width / scaleFactor, coordH: screenshot.height / scaleFactor, offsetX: 0, offsetY: 0, source: "screenshot/dpr" });
-    candidates.push({ coordW: screenshot.width, coordH: screenshot.height, offsetX: 0, offsetY: 0, source: "screenshot-raw" });
+    addCandidate(candidates, screenshot.width / scaleFactor, screenshot.height / scaleFactor, 0, 0, "screenshot/dpr");
+    addCandidate(candidates, screenshot.width, screenshot.height, 0, 0, "screenshot-raw");
+    addCandidate(candidates, screenshot.width, screenshot.height, 0, 0, "screenshot-ratio", true);
   }
 
-  // 4. Natural image dimensions
   if (natW && natH) {
-    candidates.push({ coordW: natW / scaleFactor, coordH: natH / scaleFactor, offsetX: 0, offsetY: 0, source: "natural/dpr" });
-    candidates.push({ coordW: natW, coordH: natH, offsetX: 0, offsetY: 0, source: "natural-raw" });
+    addCandidate(candidates, natW / scaleFactor, natH / scaleFactor, 0, 0, "natural/dpr");
+    addCandidate(candidates, natW, natH, 0, 0, "natural-raw");
+    addCandidate(candidates, natW, natH, 0, 0, "natural-ratio", true);
   }
 
   if (candidates.length === 0) return null;
 
-  const tolerance = 0.15;
+  const tolerance = 0.12;
   const minX = -imgW * tolerance;
   const maxX = imgW * (1 + tolerance);
   const minY = -imgH * tolerance;
@@ -522,64 +522,63 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   for (const c of candidates) {
     const scaleX = imgW / c.coordW;
     const scaleY = imgH / c.coordH;
-    const normPx = (pt.x - c.offsetX) * scaleX;
-    const normPy = (pt.y - c.offsetY) * scaleY;
 
-    // Lower penalty is better; 0 means ideal in-bounds mapping
+    const rawX = c.ratioMode ? pt.x * c.coordW : (pt.x - c.offsetX);
+    const rawY = c.ratioMode ? pt.y * c.coordH : (pt.y - c.offsetY);
+
+    const normPx = rawX * scaleX;
+    const normPy = rawY * scaleY;
+
     let penalty = 0;
-
     if (normPx < minX) penalty += (minX - normPx);
     if (normPx > maxX) penalty += (normPx - maxX);
     if (normPy < minY) penalty += (minY - normPy);
     if (normPy > maxY) penalty += (normPy - maxY);
 
+    // Discourage ratio mode unless incoming coordinates look ratio-like.
+    const looksRatioPoint = pt.x >= 0 && pt.x <= 1.05 && pt.y >= 0 && pt.y <= 1.05;
+    if (c.ratioMode && !looksRatioPoint) penalty += 10000;
+    if (!c.ratioMode && looksRatioPoint) penalty += 2000;
+
     let bx, by, bw, bh;
     if (box) {
-      bx = (box.x - c.offsetX) * scaleX;
-      by = (box.y - c.offsetY) * scaleY;
-      bw = box.width * scaleX;
-      bh = box.height * scaleY;
+      const rawBx = c.ratioMode ? box.x * c.coordW : (box.x - c.offsetX);
+      const rawBy = c.ratioMode ? box.y * c.coordH : (box.y - c.offsetY);
+      const rawBw = c.ratioMode ? box.width * c.coordW : box.width;
+      const rawBh = c.ratioMode ? box.height * c.coordH : box.height;
 
-      // Penalize impossible/huge box mappings
+      bx = rawBx * scaleX;
+      by = rawBy * scaleY;
+      bw = rawBw * scaleX;
+      bh = rawBh * scaleY;
+
       if (bw <= 1 || bh <= 1) penalty += 10000;
-      if (bw > imgW * 1.5 || bh > imgH * 1.5) penalty += 5000;
+      if (bw > imgW * 1.4 || bh > imgH * 1.4) penalty += 6000;
 
       const boxOverflowX = Math.max(0, minX - bx) + Math.max(0, bx + bw - maxX);
       const boxOverflowY = Math.max(0, minY - by) + Math.max(0, by + bh - maxY);
-      penalty += (boxOverflowX + boxOverflowY) * 0.5;
+      penalty += (boxOverflowX + boxOverflowY) * 0.7;
+
+      // Strongly prefer mappings where point lands inside box.
+      const pointInBox = normPx >= bx - 2 && normPx <= bx + bw + 2 && normPy >= by - 2 && normPy <= by + bh + 2;
+      if (!pointInBox) penalty += 3000;
     }
 
-    // Prefer non-scroll candidates when coordinates already look viewport-based
-    if ((scrollX || scrollY) && c.offsetX === 0 && c.offsetY === 0) {
-      const looksViewport = pt.x >= -1 && pt.y >= -1 && pt.x <= c.coordW + 1 && pt.y <= c.coordH + 1;
-      if (looksViewport) penalty -= 5;
-    }
+    // If coords already look viewport-based, prefer zero-scroll offsets.
+    const looksViewport = pt.x >= -1 && pt.y >= -1 && pt.x <= c.coordW + 1 && pt.y <= c.coordH + 1;
+    if ((scrollX || scrollY) && c.offsetX === 0 && c.offsetY === 0 && looksViewport && !c.ratioMode) penalty -= 8;
 
     if (penalty < bestPenalty) {
       bestPenalty = penalty;
-      best = {
-        scaleX,
-        scaleY,
-        px: normPx,
-        py: normPy,
-        source: c.source,
-        coordW: c.coordW,
-        coordH: c.coordH,
-        bx,
-        by,
-        bw,
-        bh,
-      };
+      best = { scaleX, scaleY, px: normPx, py: normPy, source: c.source, coordW: c.coordW, coordH: c.coordH, bx, by, bw, bh };
     }
   }
 
-  // Suppress only if even best candidate is far out-of-bounds
-  if (!best || bestPenalty > Math.max(imgW, imgH) * 0.6) return null;
-
+  if (!best || bestPenalty > Math.max(imgW, imgH) * 1.2) return null;
   return best;
 }
 
-function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl, showDebug }) {
+const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl, showDebug }, _ref) {
   if (!action || !action.point || !imgEl || !containerEl) return null;
 
   const natW = imgEl.naturalWidth || 1;
@@ -659,12 +658,12 @@ function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl, 
           fontSize: 10, fontFamily: "monospace", padding: "2px 6px", borderRadius: 3, zIndex: 10,
           lineHeight: 1.4, whiteSpace: "pre",
         }}>
-          {`src: ${norm.source}\ncoord: ${norm.coordW.toFixed(0)}×${norm.coordH.toFixed(0)}\nimg: ${imgW.toFixed(0)}×${imgH.toFixed(0)}\npt: ${action.point.x.toFixed(1)},${action.point.y.toFixed(1)}\nscale: ${norm.scaleX.toFixed(3)},${norm.scaleY.toFixed(3)}`}
+          {`src: ${norm.source}\ncoord: ${norm.coordW.toFixed(0)}×${norm.coordH.toFixed(0)}\nimg: ${imgW.toFixed(0)}×${imgH.toFixed(0)}\npt: ${action.point.x.toFixed(3)},${action.point.y.toFixed(3)}\nscale: ${norm.scaleX.toFixed(3)},${norm.scaleY.toFixed(3)}`}
         </div>
       )}
     </div>
   );
-}
+});
 
 export default function TraceStudio() {
   const urlParams = useMemo(parseUrlParams, []);
@@ -1183,7 +1182,7 @@ export default function TraceStudio() {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                <ActionOverlay action={currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} />
+                <ActionOverlay action={currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
