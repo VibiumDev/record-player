@@ -381,27 +381,36 @@ const CURSOR_SVG = (
   </svg>
 );
 
-function ActionOverlay({ action, screenshot, viewport, imgEl }) {
-  if (!action || !action.point || !imgEl) return null;
+function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl }) {
+  if (!action || !action.point || !imgEl || !containerEl) return null;
 
-  const imgW = imgEl.clientWidth;
-  const imgH = imgEl.clientHeight;
   const natW = imgEl.naturalWidth || 1;
   const natH = imgEl.naturalHeight || 1;
-  if (!imgW || !imgH) return null;
 
-  // input point/box are viewport coordinates; prefer viewport mapping.
-  // Fallback to screenshot metadata, then natural image size if unavailable.
-  const coordW = viewport?.width || screenshot?.width || natW;
-  const coordH = viewport?.height || screenshot?.height || natH;
+  // The container rect and img rect — use getBoundingClientRect for accuracy
+  const cRect = containerEl.getBoundingClientRect();
+  const iRect = imgEl.getBoundingClientRect();
+  if (!iRect.width || !iRect.height) return null;
 
-  const offLeft = imgEl.offsetLeft;
-  const offTop = imgEl.offsetTop;
+  // Img position relative to the container
+  const imgLeft = iRect.left - cRect.left;
+  const imgTop = iRect.top - cRect.top;
+  const imgW = iRect.width;
+  const imgH = iRect.height;
+
+  // point/box are in CSS viewport coordinates.
+  // Determine the viewport coordinate space:
+  // 1. Explicit viewport from context options (best)
+  // 2. Screenshot dimensions / DPR
+  // 3. Natural image dimensions / DPR
+  const scaleFactor = dpr || 1;
+  const coordW = viewport?.width || (screenshot?.width ? screenshot.width / scaleFactor : natW / scaleFactor);
+  const coordH = viewport?.height || (screenshot?.height ? screenshot.height / scaleFactor : natH / scaleFactor);
 
   const scaleX = imgW / coordW;
   const scaleY = imgH / coordH;
-  const px = offLeft + action.point.x * scaleX;
-  const py = offTop + action.point.y * scaleY;
+  const px = imgLeft + action.point.x * scaleX;
+  const py = imgTop + action.point.y * scaleY;
   const color = actionColor(action.apiName);
   const n = (action.apiName || "").toLowerCase();
   const isClick = n.includes("click") || n.includes("tap") || n.includes("dblclick");
@@ -417,8 +426,8 @@ function ActionOverlay({ action, screenshot, viewport, imgEl }) {
       {action.box && (
         <div style={{
           position: "absolute",
-          left: offLeft + action.box.x * scaleX,
-          top: offTop + action.box.y * scaleY,
+          left: imgLeft + action.box.x * scaleX,
+          top: imgTop + action.box.y * scaleY,
           width: action.box.width * scaleX,
           height: action.box.height * scaleY,
           border: `2px solid ${color}`,
@@ -515,6 +524,7 @@ export default function TraceStudio() {
   const touchRef = useRef({ startX: 0, startY: 0 });
   const prevPointRef = useRef(null);
   const imgRef = useRef(null);
+  const screenshotContainerRef = useRef(null);
   const [imgDims, setImgDims] = useState({ w: 0, h: 0 });
 
   // On mobile/compact, collapse panels
@@ -956,6 +966,7 @@ export default function TraceStudio() {
                 }
               }
             }}
+            ref={screenshotContainerRef}
             style={{ flex: 1, background: V.bg, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
             {/* Current group label */}
             {playhead > 0 && currentGroup && (
@@ -972,7 +983,7 @@ export default function TraceStudio() {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                <ActionOverlay action={currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} imgEl={imgRef.current} />
+                <ActionOverlay action={currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} />
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
