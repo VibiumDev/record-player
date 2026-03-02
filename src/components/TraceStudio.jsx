@@ -491,13 +491,19 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
 
   if (snapshotViewport?.width && snapshotViewport?.height) {
     addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, 0, 0, "snapshot-viewport");
-    if (scrollX || scrollY) addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, scrollX, scrollY, "snapshot-viewport-scroll");
+    if (scrollX || scrollY) {
+      addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, scrollX, scrollY, "snapshot-viewport-scroll-sub");
+      addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, -scrollX, -scrollY, "snapshot-viewport-scroll-add");
+    }
     addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, 0, 0, "snapshot-viewport-ratio", true);
   }
 
   if (viewport?.width && viewport?.height) {
     addCandidate(candidates, viewport.width, viewport.height, 0, 0, "context-viewport");
-    if (scrollX || scrollY) addCandidate(candidates, viewport.width, viewport.height, scrollX, scrollY, "context-viewport-scroll");
+    if (scrollX || scrollY) {
+      addCandidate(candidates, viewport.width, viewport.height, scrollX, scrollY, "context-viewport-scroll-sub");
+      addCandidate(candidates, viewport.width, viewport.height, -scrollX, -scrollY, "context-viewport-scroll-add");
+    }
     addCandidate(candidates, viewport.width, viewport.height, 0, 0, "context-viewport-ratio", true);
   }
 
@@ -594,9 +600,12 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
       if (!pointInBox) penalty += 3000;
     }
 
-    // If coords already look viewport-based, prefer zero-scroll offsets.
+    // If coords already look viewport-based, strongly prefer zero-scroll offsets.
     const looksViewport = pt.x >= -1 && pt.y >= -1 && pt.x <= (c.coordW / c.boost) + 1 && pt.y <= (c.coordH / c.boost) + 1;
-    if ((scrollX || scrollY) && c.offsetX === 0 && c.offsetY === 0 && looksViewport && !c.ratioMode) penalty -= 8;
+    if ((scrollX || scrollY) && looksViewport && !c.ratioMode) {
+      if (c.offsetX === 0 && c.offsetY === 0) penalty -= 60;
+      else penalty += 120;
+    }
 
     if (penalty < bestPenalty) {
       bestPenalty = penalty;
