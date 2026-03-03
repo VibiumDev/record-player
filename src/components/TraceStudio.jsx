@@ -1247,7 +1247,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                <ActionOverlay action={selectedAction && Math.min(Math.abs((selectedAction.startTime || 0) - playhead), Math.abs((selectedAction.endTime || selectedAction.startTime || 0) - playhead)) < 500 ? selectedAction : currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />
+                <ActionOverlay action={selectedAction && playhead >= (selectedAction.startTime || 0) - 50 && playhead < (selectedAction.endTime || selectedAction.startTime || 0) ? selectedAction : currentAction} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
