@@ -1023,7 +1023,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         for (let i = sorted.length - 1; i >= 0; i--) {
           if (sorted[i].startTime < playhead - 10) { prev = sorted[i]; break; }
         }
-        setPlayhead(prev ? prev.startTime : 0);
+        setPlayhead(prev ? (prev.endTime || prev.startTime) : 0);
         if (prev) setSelectedAction(prev);
       }
       if (key === "ArrowRight" || key === "ArrowDown") {
@@ -1034,7 +1034,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         for (const a of sorted) {
           if (a.startTime > playhead + 10) { next = a; break; }
         }
-        setPlayhead(next ? next.startTime : traceData.duration);
+        setPlayhead(next ? (next.endTime || next.startTime) : traceData.duration);
         if (next) setSelectedAction(next);
       }
       if (key === " ") {
@@ -1062,11 +1062,22 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const currentScreenshot = useMemo(() => {
     if (!traceData) return null;
     let best = null;
+    let nextAfter = null;
     for (const s of traceData.screenshots) {
       if (s.time <= playhead && s.url) best = s;
+      else if (s.url && !nextAfter && s.time > playhead) nextAfter = s;
+    }
+    // If an action is selected/active, prefer a screenshot just after the playhead
+    // that's closer to the action's endTime (within 100ms tolerance)
+    const activeAction = selectedAction;
+    if (nextAfter && activeAction) {
+      const endT = activeAction.endTime || activeAction.startTime || 0;
+      if (nextAfter.time - playhead <= 100 && Math.abs(nextAfter.time - endT) < (best ? Math.abs(best.time - endT) : Infinity)) {
+        return nextAfter;
+      }
     }
     return best;
-  }, [playhead, traceData]);
+  }, [playhead, traceData, selectedAction]);
 
   // ─── Current action ─────────────────────────────────────────────────────
   const currentAction = useMemo(() => {
@@ -1170,9 +1181,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
 
         <div style={{ display: "flex", alignItems: "center", gap: 2, background: V.bgPanel, border: `1px solid ${V.border}`, borderRadius: 10, padding: "2px 4px" }}>
           <button onClick={() => { setPlayhead(0); setIsPlaying(false); }} style={{ background: "none", border: "none", color: V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, outline: "none" }}>⏮</button>
-          {mobile && <button onClick={() => { setIsPlaying(false); const prev = [...filteredActions].reverse().find(a => a.startTime < playhead - 10); setPlayhead(prev ? prev.startTime : 0); if (prev) setSelectedAction(prev); }} style={{ background: "none", border: "none", color: V.textDim, cursor: "pointer", padding: "3px 6px", borderRadius: 6, fontSize: 16, outline: "none" }}>◀</button>}
+          {mobile && <button onClick={() => { setIsPlaying(false); const prev = [...filteredActions].reverse().find(a => a.startTime < playhead - 10); setPlayhead(prev ? (prev.endTime || prev.startTime) : 0); if (prev) setSelectedAction(prev); }} style={{ background: "none", border: "none", color: V.textDim, cursor: "pointer", padding: "3px 6px", borderRadius: 6, fontSize: 16, outline: "none" }}>◀</button>}
           <button onClick={() => setIsPlaying(!isPlaying)} style={{ background: isPlaying ? V.orange : "none", border: "none", color: isPlaying ? "#fff" : V.textDim, cursor: "pointer", width: 48, height: 36, borderRadius: 8, fontSize: 24, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", outline: "none" }}>{isPlaying ? "⏸" : "▶"}</button>
-          {mobile && <button onClick={() => { setIsPlaying(false); const next = filteredActions.find(a => a.startTime > playhead + 10); if (next) { setPlayhead(next.startTime); setSelectedAction(next); } }} style={{ background: "none", border: "none", color: V.textDim, cursor: "pointer", padding: "3px 6px", borderRadius: 6, fontSize: 16, outline: "none" }}>▶</button>}
+          {mobile && <button onClick={() => { setIsPlaying(false); const next = filteredActions.find(a => a.startTime > playhead + 10); if (next) { setPlayhead(next.endTime || next.startTime); setSelectedAction(next); } }} style={{ background: "none", border: "none", color: V.textDim, cursor: "pointer", padding: "3px 6px", borderRadius: 6, fontSize: 16, outline: "none" }}>▶</button>}
           <button onClick={() => { setPlayhead(D); setIsPlaying(false); }} style={{ background: "none", border: "none", color: V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, outline: "none" }}>⏭</button>
           {!mobile && <>
             <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
@@ -1219,13 +1230,13 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                 const sorted = filteredActions;
                 if (dx < 0) { /* swipe left = next */
                   const next = sorted.find(a => a.startTime > playhead + 10);
-                  if (next) { setPlayhead(next.startTime); setSelectedAction(next); }
+                  if (next) { setPlayhead(next.endTime || next.startTime); setSelectedAction(next); }
                 } else { /* swipe right = prev */
                   let prev = null;
                   for (let i = sorted.length - 1; i >= 0; i--) {
                     if (sorted[i].startTime < playhead - 10) { prev = sorted[i]; break; }
                   }
-                  setPlayhead(prev ? prev.startTime : 0);
+                  setPlayhead(prev ? (prev.endTime || prev.startTime) : 0);
                   if (prev) setSelectedAction(prev);
                 }
               }
@@ -1457,7 +1468,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                 const isPast = playhead > a.endTime + 200;
                 const c = actionColor(a.apiName);
                 return (
-                  <div key={`a-${i}`} ref={isActive ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined} onClick={() => { setPlayhead(a.startTime); setSelectedAction(a); }} style={{
+                  <div key={`a-${i}`} ref={isActive ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined} onClick={() => { setPlayhead(a.endTime || a.startTime); setSelectedAction(a); }} style={{
                     display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", paddingLeft: 6 + depth * 20, borderRadius: 5, marginBottom: 1, cursor: "pointer",
                     background: isActive ? c + "15" : selectedAction === a ? c + "08" : "transparent",
                     border: isActive ? `1px solid ${c}30` : "1px solid transparent",
