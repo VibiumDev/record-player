@@ -1062,22 +1062,11 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const currentScreenshot = useMemo(() => {
     if (!traceData) return null;
     let best = null;
-    let nextAfter = null;
     for (const s of traceData.screenshots) {
       if (s.time <= playhead && s.url) best = s;
-      else if (s.url && !nextAfter && s.time > playhead) nextAfter = s;
-    }
-    // If an action is selected/active, prefer a screenshot just after the playhead
-    // that's closer to the action's endTime (within 100ms tolerance)
-    const activeAction = selectedAction;
-    if (nextAfter && activeAction) {
-      const endT = activeAction.endTime || activeAction.startTime || 0;
-      if (nextAfter.time - playhead <= 500 && Math.abs(nextAfter.time - endT) < (best ? Math.abs(best.time - endT) : Infinity)) {
-        return nextAfter;
-      }
     }
     return best;
-  }, [playhead, traceData, selectedAction]);
+  }, [playhead, traceData]);
 
   // ─── Current action ─────────────────────────────────────────────────────
   const currentAction = useMemo(() => {
