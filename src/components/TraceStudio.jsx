@@ -976,7 +976,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
 
   // ─── Auto-scroll timeline to keep playhead visible ─────────────────────
   useEffect(() => {
-    if (!scrollRef.current || !traceData) return;
+    if (!scrollRef.current || !traceData || dragging.current) return;
     const el = scrollRef.current;
     const contentW = el.scrollWidth;
     const viewW = el.clientWidth;
