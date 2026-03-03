@@ -2,32 +2,20 @@
 
 ## Problem
 
-When clicking an action in the sidebar, the playhead jumps to `action.startTime` (line 1460). The screenshot picker (line 1062-1069) then shows the latest screencast frame with `time <= playhead`. Since screencast frames capturing the *result* of an action are recorded **after** the action completes (`endTime`), the displayed screenshot is always one from *before* the action — showing the wrong state.
-
-This creates the "off by a step or two" effect: the fill result screenshot only appears when the playhead reaches a later action whose `startTime` exceeds the fill's screencast frame timestamp.
-
-**This is a viewer bug, not a trace recording issue.**
+The action overlay (element highlight + cursor) appears immediately when an action is selected, but the screenshot lags behind because the `currentScreenshot` logic is too conservative -- it only considers screenshots within 100ms after the playhead. For actions where the result screenshot is recorded more than 100ms after `endTime`, the old screenshot persists for a beat while the overlay already shows the new action's target.
 
 ## Fix
 
-Two changes needed:
+Two changes in `src/components/TraceStudio.jsx`:
 
-### 1. Action click → jump to `endTime` instead of `startTime`
+### 1. Widen the post-playhead screenshot tolerance
 
-When clicking an action in the sidebar (line 1460) and in arrow key navigation (lines 1026, 1037), set playhead to `action.endTime` (falling back to `startTime`). This ensures the post-action screenshot is displayed, showing what happened *as a result* of that action.
+In the `currentScreenshot` memo (line 1062-1080), increase the 100ms tolerance to ~500ms, and make it prefer the nearest screenshot to the action's `endTime` regardless of whether it's before or after playhead, as long as it's within that window.
 
-Apply the same change to:
-- Sidebar action click (line 1460)
-- Arrow key prev/next (lines 1026, 1037)
-- Mobile prev/next buttons (lines 1173, 1175)
-- Swipe navigation (lines 1222, 1228)
+### 2. Sync the overlay guard with endTime
 
-### 2. `currentScreenshot` — prefer the nearest post-action frame when an action is active
+On line 1261, the overlay guard checks `Math.abs((selectedAction.startTime || 0) - playhead) < 350`. Since playhead now jumps to `endTime`, this check can fail for actions longer than 350ms, causing the overlay to flicker to `currentAction` instead. Change it to check against `endTime` as well: use `Math.min(startTime, endTime)` distance or simply widen the window to include both.
 
-Update the `currentScreenshot` memo to also consider the *next* screenshot after the playhead when the current/selected action's `endTime` is very close to a screenshot's timestamp. This handles edge cases where `endTime` is slightly before the screencast frame.
-
-Specifically: if `best` is found but there's a screenshot within ~100ms *after* the playhead that's closer to the current action's `endTime`, prefer that one.
-
-### Files to change
-- `src/components/TraceStudio.jsx` — ~6 locations, all small edits
+### Files
+- `src/components/TraceStudio.jsx` -- 2 small edits
 
