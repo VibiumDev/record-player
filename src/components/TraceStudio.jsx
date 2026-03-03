@@ -1021,7 +1021,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         const sorted = filteredActions;
         let prev = null;
         for (let i = sorted.length - 1; i >= 0; i--) {
-          if (sorted[i].startTime < playhead - 10) { prev = sorted[i]; break; }
+          if ((sorted[i].endTime || sorted[i].startTime) < playhead - 10) { prev = sorted[i]; break; }
         }
         setPlayhead(prev ? (prev.endTime || prev.startTime) : 0);
         if (prev) setSelectedAction(prev);
