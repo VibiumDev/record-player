@@ -636,25 +636,59 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   return best;
 }
 
+// Persistent cursor component — always visible, animates between positions
+const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl }) => {
+  const [pos, setPos] = useState({ x: 0, y: 0, visible: false });
+
+  useEffect(() => {
+    if (!imgEl || !containerEl) return;
+    if (!action || !action.point) return;
+    const natW = imgEl.naturalWidth || 1;
+    const natH = imgEl.naturalHeight || 1;
+    const cRect = containerEl.getBoundingClientRect();
+    const iRect = imgEl.getBoundingClientRect();
+    if (!iRect.width || !iRect.height) return;
+    const imgLeft = iRect.left - cRect.left;
+    const imgTop = iRect.top - cRect.top;
+    const imgW = iRect.width;
+    const imgH = iRect.height;
+    const norm = normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, natW, natH });
+    if (!norm) return;
+    setPos({ x: imgLeft + norm.px, y: imgTop + norm.py, visible: true });
+  }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl]);
+
+  if (!pos.visible) return null;
+  return (
+    <div style={{
+      position: "absolute",
+      left: pos.x,
+      top: pos.y,
+      transition: "left 0.35s cubic-bezier(0.4, 0, 0.2, 1), top 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+      zIndex: 6,
+      pointerEvents: "none",
+    }}>
+      {CURSOR_SVG}
+    </div>
+  );
+};
+
 const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl, showDebug }, _ref) {
   if (!action || !action.point || !imgEl || !containerEl) return null;
 
   const natW = imgEl.naturalWidth || 1;
   const natH = imgEl.naturalHeight || 1;
 
-  // The container rect and img rect — use getBoundingClientRect for accuracy
   const cRect = containerEl.getBoundingClientRect();
   const iRect = imgEl.getBoundingClientRect();
   if (!iRect.width || !iRect.height) return null;
 
-  // Img position relative to the container
   const imgLeft = iRect.left - cRect.left;
   const imgTop = iRect.top - cRect.top;
   const imgW = iRect.width;
   const imgH = iRect.height;
 
   const norm = normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, natW, natH });
-  if (!norm) return null; // Out-of-bounds — suppress
+  if (!norm) return null;
 
   const px = imgLeft + norm.px;
   const py = imgTop + norm.py;
@@ -680,18 +714,9 @@ const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, vi
           border: `3px solid ${color}`,
           background: `${color}20`,
           borderRadius: 3,
-          transition: "left 0.15s, top 0.15s, width 0.15s, height 0.15s",
+          transition: "left 0.3s cubic-bezier(0.4,0,0.2,1), top 0.3s cubic-bezier(0.4,0,0.2,1), width 0.3s cubic-bezier(0.4,0,0.2,1), height 0.3s cubic-bezier(0.4,0,0.2,1)",
         }} />
       )}
-      {/* Cursor */}
-      <div style={{
-        position: "absolute",
-        left: px,
-        top: py,
-        transition: "left 0.15s ease-out, top 0.15s ease-out",
-      }}>
-        {CURSOR_SVG}
-      </div>
       {/* Click ripple */}
       {isClick && (
         <div key={action.callId} style={{
@@ -1263,6 +1288,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   alt="trace screenshot"
                 />
                 <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />
+                <PersistentCursor action={(() => { /* Find the most recent action with a point up to current playhead */ const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} />
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
