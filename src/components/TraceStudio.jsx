@@ -1298,6 +1298,10 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           <input type="file" accept=".zip" onChange={handleFileInput} style={{ position: "absolute", opacity: 0, width: 320, height: 160, cursor: "pointer", outline: "none" }} />
         </div>
 
+        <div style={{ color: V.textDim, fontSize: 14, marginTop: 4 }}>
+          Or <a href="/?trace=vibium-demo-trace.zip" style={{ color: V.orange, textDecoration: "none" }}>view a sample trace</a>
+        </div>
+
         {loading && <div style={{ color: V.orange, fontSize: 16 }}>Loading trace...</div>}
         {error && <div style={{ color: "#ef4444", fontSize: 15, maxWidth: 400, textAlign: "center" }}>Error: {error}</div>}
 
