@@ -1158,6 +1158,18 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
     if (isPlaying && currentAction) setSelectedAction(currentAction);
   }, [currentAction, isPlaying]);
 
+  // ─── Scroll timeline to selected action ─────────────────────────────
+  useEffect(() => {
+    if (!selectedAction || !scrollRef.current || !traceData) return;
+    const container = scrollRef.current;
+    const labelW = 56;
+    const innerW = container.scrollWidth;
+    const contentW = innerW - labelW;
+    const actionPx = labelW + ((selectedAction.startTime || 0) / (traceData.duration || 1)) * contentW;
+    const centerOffset = actionPx - container.clientWidth / 2;
+    container.scrollTo({ left: Math.max(0, centerOffset), behavior: "smooth" });
+  }, [selectedAction, traceData, zoom]);
+
   // ─── Timeline ticks ────────────────────────────────────────────────────
   const ticks = useMemo(() => {
     if (!traceData) return [];
@@ -1818,16 +1830,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   const c = actionColor(a.apiName);
                   const isSelected = selectedAction === a;
                   return (
-                    <div key={i} ref={isSelected ? (el) => {
-                      if (el && scrollRef.current) {
-                        const container = scrollRef.current;
-                        const innerW = container.scrollWidth;
-                        const labelW = 56;
-                        const actionPx = labelW + ((a.startTime / D) * (innerW - labelW));
-                        const centerOffset = actionPx - container.clientWidth / 2;
-                        container.scrollTo({ left: Math.max(0, centerOffset), behavior: "smooth" });
-                      }
-                    } : undefined} onClick={() => { setPlayhead(a.endTime || a.startTime); setSelectedAction(a); }} style={{
+                    <div key={i} onClick={() => { setPlayhead(a.endTime || a.startTime); setSelectedAction(a); }} style={{
                       position: "absolute", left: `${left}%`, top: actionBarPad,
                       width: `max(${w}%, 16px)`, height: actionBarH,
                       background: a.error ? "#ef444430" : isSelected ? `${c}40` : `${c}25`, border: `1px solid ${a.error ? "#ef4444" : isSelected ? c : `${c}40`}`, borderRadius: Math.round(3 * Math.min(s, 1.5)),
