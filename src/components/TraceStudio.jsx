@@ -995,13 +995,13 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
     if (contentW <= viewW) return; // no scroll needed
     const playheadX = 56 + (playhead / (traceData.duration || 1)) * (contentW - 56);
     const margin = viewW * 0.3; // keep playhead ~30% from edges
-    const maxStep = dragging.current ? 2 : 6; // slow scroll speed
+    const speed = dragging.current ? 0.08 : 0.18; // lerp factor (slow & smooth)
     if (playheadX < el.scrollLeft + margin) {
       const target = Math.max(0, playheadX - margin);
-      el.scrollLeft = Math.max(target, el.scrollLeft - maxStep);
+      el.scrollLeft += (target - el.scrollLeft) * speed;
     } else if (playheadX > el.scrollLeft + viewW - margin) {
       const target = playheadX - viewW + margin;
-      el.scrollLeft = Math.min(target, el.scrollLeft + maxStep);
+      el.scrollLeft += (target - el.scrollLeft) * speed;
     }
   }, [playhead, traceData]);
 
