@@ -865,38 +865,46 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
 
   // ─── Panel resize handlers ──────────────────────────────────────────────
   useEffect(() => {
+    const getXY = (e) => {
+      if (e.touches && e.touches.length) return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+      return { clientX: e.clientX, clientY: e.clientY };
+    };
     const onMove = (e) => {
+      const { clientX, clientY } = getXY(e);
       if (sideDrag.current) {
-        const newW = window.innerWidth - e.clientX;
+        const newW = window.innerWidth - clientX;
         setSideW(Math.max(180, Math.min(600, newW)));
       }
       if (timelineDrag.current) {
         const statusBarH = 24;
-        const newH = window.innerHeight - e.clientY - statusBarH;
+        const newH = window.innerHeight - clientY - statusBarH;
         setTimelineH(Math.max(60, Math.min(300, newH)));
       }
       if (detailDrag.current) {
-        const delta = detailDragStart.current.y - e.clientY;
+        const delta = detailDragStart.current.y - clientY;
         setDetailH(Math.max(60, Math.min(500, detailDragStart.current.h + delta)));
       }
       if (dragging.current && scrollRef.current) {
         const el = scrollRef.current;
         const rect = el.getBoundingClientRect();
-        // Gentle edge-scrolling: when the cursor is near the edges, scroll slowly
-        const edgeZone = 60; // px from edge to start scrolling
-        const maxSpeed = 4;  // px per mousemove event (low velocity)
-        const cursorX = e.clientX - rect.left;
+        const edgeZone = 60;
+        const maxSpeed = 4;
+        const cursorX = clientX - rect.left;
         if (cursorX < edgeZone) {
-          const t = 1 - cursorX / edgeZone; // 0..1, stronger near edge
+          const t = 1 - cursorX / edgeZone;
           el.scrollLeft = Math.max(0, el.scrollLeft - maxSpeed * t);
         } else if (cursorX > rect.width - edgeZone) {
           const t = 1 - (rect.width - cursorX) / edgeZone;
           el.scrollLeft = Math.min(el.scrollWidth - rect.width, el.scrollLeft + maxSpeed * t);
         }
-        const x = e.clientX - rect.left + el.scrollLeft - 56;
+        const x = clientX - rect.left + el.scrollLeft - 56;
         const tw = el.scrollWidth - 56;
         const dur = traceData?.duration || 1;
         setPlayhead(Math.max(0, Math.min(dur, (x / tw) * dur)));
+      }
+      // Prevent scrolling while dragging dividers on touch
+      if ((sideDrag.current || timelineDrag.current || detailDrag.current || dragging.current) && e.cancelable) {
+        e.preventDefault();
       }
     };
     const onUp = () => {
@@ -908,7 +916,16 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+    window.addEventListener("touchcancel", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+      window.removeEventListener("touchcancel", onUp);
+    };
   }, [traceData]);
 
   // ─── Load trace.zip ─────────────────────────────────────────────────────
@@ -1505,7 +1522,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           {/* Resize handle with collapse chevron */}
           <div
             onMouseDown={(e) => { if (e.target.dataset.chevron) return; e.preventDefault(); sideDrag.current = true; document.body.style.cursor = "col-resize"; }}
-            style={{ width: 9, flexShrink: 0, cursor: "col-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onTouchStart={(e) => { if (e.target.dataset.chevron) return; sideDrag.current = true; }}
+            style={{ width: 9, flexShrink: 0, cursor: "col-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
           >
             <div style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1, background: V.border, transition: "background 0.15s" }}
               onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
@@ -1793,7 +1811,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
             {/* Detail divider with centered chevron */}
             <div
               onMouseDown={(e) => { if (e.target.dataset.chevron || !showDetail) return; e.preventDefault(); detailDrag.current = true; detailDragStart.current = { y: e.clientY, h: detailH }; document.body.style.cursor = "row-resize"; }}
-              style={{ height: 9, flexShrink: 0, cursor: showDetail ? "row-resize" : "default", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center" }}
+              onTouchStart={(e) => { if (e.target.dataset.chevron || !showDetail) return; const t = e.touches[0]; detailDrag.current = true; detailDragStart.current = { y: t.clientY, h: detailH }; }}
+              style={{ height: 9, flexShrink: 0, cursor: showDetail ? "row-resize" : "default", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
             >
               <div style={{ position: "absolute", top: 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
                 onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
@@ -1855,7 +1874,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         {/* Resize handle with collapse chevron */}
         <div
           onMouseDown={(e) => { if (e.target.dataset.chevron) return; e.preventDefault(); timelineDrag.current = true; document.body.style.cursor = "row-resize"; }}
-          style={{ height: 9, flexShrink: 0, cursor: "row-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onTouchStart={(e) => { if (e.target.dataset.chevron) return; timelineDrag.current = true; }}
+          style={{ height: 9, flexShrink: 0, cursor: "row-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
         >
           <div style={{ position: "absolute", top: 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
             onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
@@ -1921,8 +1941,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         <div style={{ height: timelineH, flexShrink: 0, background: V.bg, overflow: "hidden" }}>
         <div
           ref={scrollRef}
-          style={{ overflowX: "auto", overflowY: "auto", cursor: "crosshair", position: "relative", height: "100%" }}
+          style={{ overflowX: "auto", overflowY: "auto", cursor: "crosshair", position: "relative", height: "100%", touchAction: "pan-y" }}
           onMouseDown={(e) => { dragging.current = true; handleScrub(e); }}
+          onTouchStart={(e) => { dragging.current = true; const t = e.touches[0]; handleScrub({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget }); }}
         >
           <div style={{ width: `${100 * zoom}%`, minWidth: "100%", position: "relative" }}>
             {/* Proportional lane heights based on panel size */}
