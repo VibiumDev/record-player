@@ -1162,7 +1162,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       >
         {/* Theme toggle */}
         <button onClick={() => setDark(!dark)} style={{ position: "absolute", top: 16, right: 16, background: V.bgCard, border: `1px solid ${V.border}`, color: V.textMid, cursor: "pointer", padding: "5px 10px", borderRadius: 6, fontSize: 15, fontFamily: "inherit" }}>
-          {dark ? "☀︎ Light" : "☾ Dark"}
+          {dark ? "☀︎" : "☾"}
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src={VIBIUM_LOGO_HI} alt="V" style={{ width: 48, height: 62 }} />
