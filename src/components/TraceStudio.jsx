@@ -637,25 +637,31 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
 }
 
 // Persistent cursor component — always visible, animates between positions
-const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl }) => {
+const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl, layoutKey }) => {
   const [pos, setPos] = useState({ x: 0, y: 0, visible: false });
 
   useEffect(() => {
-    if (!imgEl || !containerEl) return;
-    if (!action || !action.point) return;
-    const natW = imgEl.naturalWidth || 1;
-    const natH = imgEl.naturalHeight || 1;
-    const cRect = containerEl.getBoundingClientRect();
-    const iRect = imgEl.getBoundingClientRect();
-    if (!iRect.width || !iRect.height) return;
-    const imgLeft = iRect.left - cRect.left;
-    const imgTop = iRect.top - cRect.top;
-    const imgW = iRect.width;
-    const imgH = iRect.height;
-    const norm = normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, natW, natH });
-    if (!norm) return;
-    setPos({ x: imgLeft + norm.px, y: imgTop + norm.py, visible: true });
-  }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl]);
+    const recalc = () => {
+      if (!imgEl || !containerEl) return;
+      if (!action || !action.point) return;
+      const natW = imgEl.naturalWidth || 1;
+      const natH = imgEl.naturalHeight || 1;
+      const cRect = containerEl.getBoundingClientRect();
+      const iRect = imgEl.getBoundingClientRect();
+      if (!iRect.width || !iRect.height) return;
+      const imgLeft = iRect.left - cRect.left;
+      const imgTop = iRect.top - cRect.top;
+      const imgW = iRect.width;
+      const imgH = iRect.height;
+      const norm = normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, natW, natH });
+      if (!norm) return;
+      setPos({ x: imgLeft + norm.px, y: imgTop + norm.py, visible: true });
+    };
+    recalc();
+    // Recalculate after panel transition settles
+    const t = setTimeout(recalc, 250);
+    return () => clearTimeout(t);
+  }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl, layoutKey]);
 
   if (!pos.visible) return null;
   return (
@@ -672,7 +678,9 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   );
 };
 
-const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl, showDebug }, _ref) {
+const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, viewport, dpr, imgEl, containerEl, showDebug, layoutKey }, _ref) {
+  const [, forceUpdate] = useState(0);
+  useEffect(() => { const t = setTimeout(() => forceUpdate(n => n + 1), 250); return () => clearTimeout(t); }, [layoutKey]);
   if (!action || !action.point || !imgEl || !containerEl) return null;
 
   const natW = imgEl.naturalWidth || 1;
@@ -1294,8 +1302,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />}
-                {overlayEnabled && <PersistentCursor action={(() => { const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} />}
+                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
+                {overlayEnabled && <PersistentCursor action={(() => { const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
