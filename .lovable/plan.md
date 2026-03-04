@@ -1,35 +1,58 @@
 
 
-## Plan: URL parameter trace loading + demo file
+## Plan: Persist panel states with localStorage, default open on first trace load
 
-### Changes
+### Problem
+Panels default to closed. New users don't see panels until they click play. Panel state doesn't survive page reload.
 
-1. **Copy demo file to public folder**
-   - Copy `user-uploads://vibium-demo-trace.zip` → `public/vibium-demo-trace.zip`
+### Approach
+Use `localStorage` to persist each panel's open/closed state. On first visit (no stored preference), panels open when a trace is loaded. URL params still override everything.
 
-2. **Add URL `?trace=` parameter support in `TraceStudio.jsx`**
-   - Add a `useEffect` near the existing `loadTrace` callback (~line 1018) that:
-     - Reads `window.location.search` for a `trace` param
-     - If present, fetches the file via `fetch()`, converts response to a `Blob`, then calls `loadTrace(blob)`
-     - Runs once on mount (empty deps + `loadTrace`)
-   - The param value is treated as a relative or absolute URL, so `?trace=vibium-demo-trace.zip` fetches from `/vibium-demo-trace.zip` (public folder)
+### Changes (single file: `src/components/TraceStudio.jsx`)
 
-### Implementation detail
+**1. Helper to read stored panel state (~before component, near `parseUrlParams`)**
 
 ```javascript
-// After loadTrace definition (~line 1018)
-useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  const traceUrl = params.get("trace");
-  if (traceUrl) {
-    const url = traceUrl.startsWith("http") ? traceUrl : `/${traceUrl}`;
-    fetch(url)
-      .then(r => { if (!r.ok) throw new Error(`Failed to fetch ${traceUrl}`); return r.blob(); })
-      .then(blob => loadTrace(blob))
-      .catch(e => setError(e.message));
-  }
-}, []);
+function getPanelDefault(key, fallback) {
+  try {
+    const v = localStorage.getItem(`trace-panel-${key}`);
+    if (v === "true") return true;
+    if (v === "false") return false;
+    return fallback;
+  } catch { return fallback; }
+}
 ```
 
-This keeps it simple — relative paths resolve from the public folder, and full URLs work for remote traces.
+**2. Update initial state (lines 799-802)**
+
+Change defaults from `false`/`true` to use stored values, with `false` as the fallback (before a trace is loaded, panels stay closed):
+
+```javascript
+const [showSide, setShowSide] = useState(urlParams.inspector ?? getPanelDefault("inspector", false));
+const [showTimeline, setShowTimeline] = useState(urlParams.timeline ?? getPanelDefault("timeline", false));
+const [showToolbar, setShowToolbar] = useState(urlParams.controls ?? getPanelDefault("controls", true));
+```
+
+**3. Persist on toggle — add a `useEffect` for each panel**
+
+```javascript
+useEffect(() => { try { localStorage.setItem("trace-panel-inspector", showSide); } catch {} }, [showSide]);
+useEffect(() => { try { localStorage.setItem("trace-panel-timeline", showTimeline); } catch {} }, [showTimeline]);
+useEffect(() => { try { localStorage.setItem("trace-panel-controls", showToolbar); } catch {} }, [showToolbar]);
+```
+
+**4. Open all panels on first trace load**
+
+After `loadTrace` completes successfully (~end of the try block around line 995), check if user has any stored preference. If not (first visit), open all panels:
+
+```javascript
+const hasStoredPrefs = ["inspector","timeline","controls"].some(k => localStorage.getItem(`trace-panel-${k}`) !== null);
+if (!hasStoredPrefs && !mobile && !compact) {
+  setShowSide(true);
+  setShowTimeline(true);
+  setShowToolbar(true);
+}
+```
+
+This also replaces the play-button logic at line 1446 — panels will already be open after loading, so the play button just starts playback.
 
