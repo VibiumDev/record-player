@@ -1392,7 +1392,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         <button
           onClick={() => setOverlayEnabled(!overlayEnabled)}
           title={overlayEnabled ? "Disable highlight" : "Enable highlight"}
-          style={{ background: overlayEnabled ? V.orange : V.bgPanel, border: `1px solid ${overlayEnabled ? V.orange : V.border}`, color: overlayEnabled ? "#fff" : V.textDim, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: mobile ? 12 : 14, fontFamily: "inherit", transition: "all 0.15s", outline: "none" }}
+          style={{ background: overlayEnabled ? V.orange + "18" : "none", border: overlayEnabled ? `1px solid ${V.orange}40` : "1px solid transparent", color: overlayEnabled ? V.orange : V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", outline: "none" }}
         >🔦</button>
         <button
           onClick={() => { setTraceData(null); setFileList([]); }}
