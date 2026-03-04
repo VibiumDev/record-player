@@ -1016,6 +1016,19 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
     if (file) loadTrace(file);
   };
 
+  // ─── Auto-load trace from URL param ─────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const traceUrl = params.get("trace");
+    if (traceUrl) {
+      const url = traceUrl.startsWith("http") ? traceUrl : `/${traceUrl}`;
+      fetch(url)
+        .then(r => { if (!r.ok) throw new Error(`Failed to fetch ${traceUrl}`); return r.blob(); })
+        .then(blob => loadTrace(blob))
+        .catch(e => setError(e.message));
+    }
+  }, []);
+
   // ─── Playback ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isPlaying || !traceData) return;
