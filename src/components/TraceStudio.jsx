@@ -1537,6 +1537,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                 const c = actionColor(a.apiName);
                 return (
                   <div key={`a-${i}`} ref={(isActive || selectedAction === a) ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined} onClick={() => { setPlayhead(a.endTime || a.startTime); setSelectedAction(a); }} style={{
+                    position: "relative",
                     display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", paddingLeft: 6 + depth * 20, borderRadius: 5, marginBottom: 1, cursor: "pointer",
                     background: isActive ? c + "15" : selectedAction === a ? c + "08" : "transparent",
                     border: isActive ? `1px solid ${c}30` : "1px solid transparent",
@@ -1558,6 +1559,22 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                     <span style={{ fontSize: 12, color: V.textDim, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
                       {a.duration > 0 ? `${a.duration}ms` : fmt(a.startTime)}
                     </span>
+                    {/* Playhead position indicator */}
+                    {(isActive || selectedAction === a) && playhead >= a.startTime && playhead <= (a.endTime || a.startTime) && (() => {
+                      const duration = (a.endTime || a.startTime) - a.startTime;
+                      const progress = duration > 0 ? Math.min(1, Math.max(0, (playhead - a.startTime) / duration)) : 0;
+                      return (
+                        <div style={{
+                          position: "absolute", bottom: 0, left: 0, right: 0, height: 2,
+                          background: V.border, borderRadius: 1, overflow: "hidden",
+                        }}>
+                          <div style={{
+                            width: `${progress * 100}%`, height: "100%",
+                            background: c, borderRadius: 1, transition: "width 0.1s linear",
+                          }} />
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               });
