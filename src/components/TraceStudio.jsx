@@ -1524,7 +1524,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                 const isPast = playhead > a.endTime + 200;
                 const c = actionColor(a.apiName);
                 return (
-                  <div key={`a-${i}`} ref={isActive ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined} onClick={() => { setPlayhead(a.endTime || a.startTime); setSelectedAction(a); }} style={{
+                  <div key={`a-${i}`} ref={(isActive || selectedAction === a) ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined} onClick={() => { setPlayhead(a.endTime || a.startTime); setSelectedAction(a); }} style={{
                     display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", paddingLeft: 6 + depth * 20, borderRadius: 5, marginBottom: 1, cursor: "pointer",
                     background: isActive ? c + "15" : selectedAction === a ? c + "08" : "transparent",
                     border: isActive ? `1px solid ${c}30` : "1px solid transparent",
@@ -1816,12 +1816,20 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   const left = (a.startTime / D) * 100;
                   const w = Math.max(((a.endTime - a.startTime) / D) * 100, 0.2);
                   const c = actionColor(a.apiName);
+                  const isSelected = selectedAction === a;
                   return (
-                    <div key={i} style={{
+                    <div key={i} ref={isSelected ? (el) => {
+                      if (el && scrollRef.current) {
+                        const container = scrollRef.current;
+                        const elLeft = el.offsetLeft - container.clientWidth / 2 + el.offsetWidth / 2;
+                        container.scrollTo({ left: Math.max(0, elLeft), behavior: "smooth" });
+                      }
+                    } : undefined} onClick={() => { setPlayhead(a.endTime || a.startTime); setSelectedAction(a); }} style={{
                       position: "absolute", left: `${left}%`, top: actionBarPad,
                       width: `max(${w}%, 16px)`, height: actionBarH,
-                      background: a.error ? "#ef444430" : `${c}25`, border: `1px solid ${a.error ? "#ef4444" : c}40`, borderRadius: Math.round(3 * Math.min(s, 1.5)),
+                      background: a.error ? "#ef444430" : isSelected ? `${c}40` : `${c}25`, border: `1px solid ${a.error ? "#ef4444" : isSelected ? c : `${c}40`}`, borderRadius: Math.round(3 * Math.min(s, 1.5)),
                       display: "flex", alignItems: "center", padding: "0 3px", overflow: "hidden",
+                      cursor: "pointer", transition: "background 0.15s",
                     }}>
                       <span style={{ fontSize, fontWeight: 600, color: a.error ? "#ef4444" : c, whiteSpace: "nowrap" }}>{a.apiName?.split(".").pop()}</span>
                     </div>
