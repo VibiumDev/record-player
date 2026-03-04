@@ -1232,14 +1232,14 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
 
         <div style={{ flex: 1 }} />
 
-        {!mobile && <button
-          onClick={() => setDark(!dark)}
-          style={{ background: V.bgPanel, border: `1px solid ${V.border}`, color: V.textMid, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 14, fontFamily: "inherit" }}
-        >{dark ? "☀︎" : "☾"}</button>}
         <button
           onClick={() => { setTraceData(null); setFileList([]); }}
           style={{ background: V.bgCard, border: `1px solid ${V.border}`, color: V.textDim, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: mobile ? 12 : 14, fontFamily: "inherit" }}
         >{mobile ? "✕" : "New trace"}</button>
+        {!mobile && <button
+          onClick={() => setDark(!dark)}
+          style={{ background: V.bgPanel, border: `1px solid ${V.border}`, color: V.textMid, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 14, fontFamily: "inherit" }}
+        >{dark ? "☀︎" : "☾"}</button>}
       </div>
 
       {/* ─── Main area ─────────────────────────────────────────── */}
