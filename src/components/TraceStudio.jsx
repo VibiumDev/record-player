@@ -765,6 +765,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const [hoveredThumb, setHoveredThumb] = useState(null);
   const [fileList, setFileList] = useState([]);
   const [dark, setDark] = useState(true);
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [sideW, setSideW] = useState(360);
   const [showSide, setShowSide] = useState(urlParams.inspector ?? false);
   const [timelineH, setTimelineH] = useState(212);
@@ -1233,6 +1234,11 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         <div style={{ flex: 1 }} />
 
         <button
+          onClick={() => setOverlayEnabled(!overlayEnabled)}
+          title={overlayEnabled ? "Disable overlay" : "Enable overlay"}
+          style={{ background: overlayEnabled ? V.orange : V.bgPanel, border: `1px solid ${overlayEnabled ? V.orange : V.border}`, color: overlayEnabled ? "#fff" : V.textDim, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: mobile ? 12 : 14, fontFamily: "inherit", transition: "all 0.15s" }}
+        >{mobile ? "⊹" : "⊹ Overlay"}</button>
+        <button
           onClick={() => { setTraceData(null); setFileList([]); }}
           style={{ background: V.bgCard, border: `1px solid ${V.border}`, color: V.textDim, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: mobile ? 12 : 14, fontFamily: "inherit" }}
         >{mobile ? "✕" : "New trace"}</button>
@@ -1287,8 +1293,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />
-                <PersistentCursor action={(() => { /* Find the most recent action with a point up to current playhead */ const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} />
+                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} />}
+                {overlayEnabled && <PersistentCursor action={(() => { const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} />}
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
