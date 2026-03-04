@@ -1821,8 +1821,11 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                     <div key={i} ref={isSelected ? (el) => {
                       if (el && scrollRef.current) {
                         const container = scrollRef.current;
-                        const elLeft = el.offsetLeft - container.clientWidth / 2 + el.offsetWidth / 2;
-                        container.scrollTo({ left: Math.max(0, elLeft), behavior: "smooth" });
+                        const innerW = container.scrollWidth;
+                        const labelW = 56;
+                        const actionPx = labelW + ((a.startTime / D) * (innerW - labelW));
+                        const centerOffset = actionPx - container.clientWidth / 2;
+                        container.scrollTo({ left: Math.max(0, centerOffset), behavior: "smooth" });
                       }
                     } : undefined} onClick={() => { setPlayhead(a.endTime || a.startTime); setSelectedAction(a); }} style={{
                       position: "absolute", left: `${left}%`, top: actionBarPad,
