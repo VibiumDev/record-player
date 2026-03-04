@@ -1367,53 +1367,6 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
             )}
           </div>
 
-          {/* Filmstrip — hidden on mobile */}
-          {!mobile && !compact && traceData.screenshots.filter(s => s.url).length > 0 && (
-            <div ref={filmstripRef} className="hide-scrollbar" onScroll={() => setHoveredThumb(null)} style={{ height: 56, background: V.bgPanel, borderTop: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: "0 8px", gap: 4, overflowX: "auto", flexShrink: 0, position: "relative" }}>
-              {traceData.screenshots.filter(s => s.url).map((s, i) => {
-                const active = currentScreenshot === s;
-                return (
-                <div key={i} ref={active ? (el) => {
-                  if (el && isPlaying && filmstripRef.current) {
-                    const container = filmstripRef.current;
-                    const left = el.offsetLeft - container.offsetLeft - container.clientWidth / 2 + el.offsetWidth / 2;
-                    container.scrollTo({ left, behavior: "smooth" });
-                  }
-                } : undefined} onClick={() => setPlayhead(s.time)}
-                  onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setHoveredThumb({ url: s.url, x: rect.left + rect.width / 2, y: rect.top });
-                  }}
-                  onMouseLeave={() => setHoveredThumb(null)}
-                  style={{
-                    width: 64, height: 40, flexShrink: 0, borderRadius: 4, overflow: "hidden",
-                    border: active ? `3px solid ${V.orange}` : `1px solid ${V.border}`,
-                    cursor: "pointer", boxShadow: active ? `0 0 16px ${V.orange}60` : "none",
-                  }}>
-                  <img src={s.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt="" />
-                </div>
-                );
-              })}
-
-              {/* Hover preview */}
-              {hoveredThumb && (() => {
-                const previewW = 320;
-                const centerX = hoveredThumb.x;
-                const left = Math.max(8, Math.min(centerX - previewW / 2, window.innerWidth - previewW - 8));
-                return (
-                  <div style={{
-                    position: "fixed", left, top: hoveredThumb.y,
-                    transform: "translateY(calc(-100% - 12px))",
-                    width: previewW, borderRadius: 8, overflow: "hidden",
-                    border: `2px solid ${V.orange}`, boxShadow: `0 8px 30px rgba(0,0,0,0.5)`,
-                    pointerEvents: "none", zIndex: 100,
-                  }}>
-                    <img src={hoveredThumb.url} style={{ width: "100%", display: "block" }} alt="" />
-                  </div>
-                );
-              })()}
-            </div>
-          )}
         </div>
 
         {/* ─── Side panel ─────────────────────────────────────── */}
@@ -1771,6 +1724,53 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
             onMouseLeave={(e) => { e.currentTarget.style.color = V.textDim; e.currentTarget.style.borderColor = V.border; }}
           >▾</div>
         </div>
+        {/* Filmstrip — hidden on mobile */}
+        {!mobile && !compact && traceData.screenshots.filter(s => s.url).length > 0 && (
+          <div ref={filmstripRef} className="hide-scrollbar" onScroll={() => setHoveredThumb(null)} style={{ height: 56, background: V.bgPanel, borderTop: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: "0 8px", gap: 4, overflowX: "auto", flexShrink: 0, position: "relative" }}>
+            {traceData.screenshots.filter(s => s.url).map((s, i) => {
+              const active = currentScreenshot === s;
+              return (
+              <div key={i} ref={active ? (el) => {
+                if (el && isPlaying && filmstripRef.current) {
+                  const container = filmstripRef.current;
+                  const left = el.offsetLeft - container.offsetLeft - container.clientWidth / 2 + el.offsetWidth / 2;
+                  container.scrollTo({ left, behavior: "smooth" });
+                }
+              } : undefined} onClick={() => setPlayhead(s.time)}
+                onMouseEnter={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setHoveredThumb({ url: s.url, x: rect.left + rect.width / 2, y: rect.top });
+                }}
+                onMouseLeave={() => setHoveredThumb(null)}
+                style={{
+                  width: 64, height: 40, flexShrink: 0, borderRadius: 4, overflow: "hidden",
+                  border: active ? `3px solid ${V.orange}` : `1px solid ${V.border}`,
+                  cursor: "pointer", boxShadow: active ? `0 0 16px ${V.orange}60` : "none",
+                }}>
+                <img src={s.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt="" />
+              </div>
+              );
+            })}
+
+            {/* Hover preview */}
+            {hoveredThumb && (() => {
+              const previewW = 320;
+              const centerX = hoveredThumb.x;
+              const left = Math.max(8, Math.min(centerX - previewW / 2, window.innerWidth - previewW - 8));
+              return (
+                <div style={{
+                  position: "fixed", left, top: hoveredThumb.y,
+                  transform: "translateY(calc(-100% - 12px))",
+                  width: previewW, borderRadius: 8, overflow: "hidden",
+                  border: `2px solid ${V.orange}`, boxShadow: `0 8px 30px rgba(0,0,0,0.5)`,
+                  pointerEvents: "none", zIndex: 100,
+                }}>
+                  <img src={hoveredThumb.url} style={{ width: "100%", display: "block" }} alt="" />
+                </div>
+              );
+            })()}
+          </div>
+        )}
         <div style={{ height: timelineH, flexShrink: 0, background: V.bg, overflow: "hidden" }}>
         <div
           ref={scrollRef}
