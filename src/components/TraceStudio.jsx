@@ -1058,6 +1058,19 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // ─── Navigation stops: start AND end of each visible action ─────────
+  const navStops = useMemo(() => {
+    const stops = [];
+    for (const a of filteredActions) {
+      stops.push({ time: a.startTime || 0, action: a });
+      if ((a.endTime || 0) > (a.startTime || 0) + 1) {
+        stops.push({ time: a.endTime, action: a });
+      }
+    }
+    stops.sort((a, b) => a.time - b.time);
+    return stops;
+  }, [filteredActions]);
+
   // ─── Keyboard navigation ──────────────────────────────────────────────
   useEffect(() => {
     if (!traceData) return;
@@ -1067,24 +1080,22 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       if (key === "ArrowLeft" || key === "ArrowUp") {
         e.preventDefault();
         setIsPlaying(false);
-        const sorted = filteredActions;
         let prev = null;
-        for (let i = sorted.length - 1; i >= 0; i--) {
-          if ((sorted[i].endTime || sorted[i].startTime) < playhead - 10) { prev = sorted[i]; break; }
+        for (let i = navStops.length - 1; i >= 0; i--) {
+          if (navStops[i].time < playhead - 10) { prev = navStops[i]; break; }
         }
-        setPlayhead(prev ? (prev.endTime || prev.startTime) : 0);
-        if (prev) setSelectedAction(prev);
+        setPlayhead(prev ? prev.time : 0);
+        if (prev) setSelectedAction(prev.action);
       }
       if (key === "ArrowRight" || key === "ArrowDown") {
         e.preventDefault();
         setIsPlaying(false);
-        const sorted = filteredActions;
         let next = null;
-        for (const a of sorted) {
-          if (a.startTime > playhead + 10) { next = a; break; }
+        for (const s of navStops) {
+          if (s.time > playhead + 10) { next = s; break; }
         }
-        setPlayhead(next ? (next.endTime || next.startTime) : traceData.duration);
-        if (next) setSelectedAction(next);
+        setPlayhead(next ? next.time : traceData.duration);
+        if (next) setSelectedAction(next.action);
       }
       if (key === " ") {
         e.preventDefault();
@@ -1302,7 +1313,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
+                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead <= end + 50 ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={true} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
                 {overlayEnabled && <PersistentCursor action={(() => { const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
               </>
             ) : (
@@ -1928,8 +1939,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
             {[
               ["Playback", [
                 ["Space", "Play / Pause"],
-                ["← ↑", "Previous action"],
-                ["→ ↓", "Next action"],
+                ["← ↑", "Previous action start/end"],
+                ["→ ↓", "Next action start/end"],
                 ["Home", "Jump to start"],
                 ["End", "Jump to end"],
                 ["0 – 9", "Jump to 0% – 90%"],
