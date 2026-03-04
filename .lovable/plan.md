@@ -1,22 +1,21 @@
 
 
-## Plan: Use screencast-frame dimensions as default viewport
+## Plan: Show progress bar on collapsed group headers
 
 ### Problem
-When trace files lack `frame-snapshot` data, there's no viewport information available for coordinate normalization. The screencast-frame events already contain `width` and `height` fields that represent the viewport dimensions, but these aren't being used as a viewport fallback.
+When a group is collapsed in the Inspector, the active action's progress bar is hidden. The group header should show the progress bar instead.
 
 ### Changes (single file: `src/components/TraceStudio.jsx`)
 
-1. **Extract viewport from screencast-frame data in `processTraceEvents`**: After processing all events, if no `contextOptions.viewport` was found, derive a default viewport from the first screencast-frame's `width`/`height`. Return this as a `fallbackViewport` in the parsed result.
+**In the group-start rendering block (~lines 1553-1570):**
 
-2. **Pass screencast-frame dimensions as viewport fallback**: In the rendering code where `viewport` is passed to `ActionOverlay` and `PersistentCursor` (~lines 1401-1402), use `currentScreenshot` width/height as a fallback when `traceData?.contextOptions?.options?.viewport` is null:
-   ```
-   viewport = traceData?.contextOptions?.options?.viewport 
-     || { width: currentScreenshot?.width, height: currentScreenshot?.height }
-   ```
+When `isCollapsed && isActive`, determine the current action within the group, compute its progress relative to playhead, and render the same 2px progress bar at the bottom of the group header div.
 
-3. **Per-screenshot viewport in normalization**: Since each screencast-frame can have different dimensions, the `currentScreenshot.width`/`height` should be preferred over a single global viewport. This means the `screenshot` object already carries the right data — we just need to add it as a candidate viewport in `normalizeActionCoords` when no snapshot viewport exists.
+Specifically:
+1. Find the current active action within the collapsed group: filter `filteredActions` for actions where `a.startTime >= g.startTime && a.endTime <= g.endTime && playhead >= a.startTime && playhead <= a.endTime + 200`
+2. If found, compute progress: `duration > 0 ? clamp((playhead - a.startTime) / duration) : 1`
+3. Add `position: "relative"` to the group header div's style
+4. Append the same progress bar markup (absolute bottom, 2px height) inside the group header div, using the group's purple color instead of action color
 
-### Technical detail
-In `normalizeActionCoords`, add a candidate using `screenshot.width`/`screenshot.height` as a viewport-like coordinate base (not just as raw screenshot dimensions) when `snapshotViewport` is null. This gives the penalty system a direct match for traces where coordinates are in viewport space matching the screencast frame size.
+This reuses the exact same visual pattern from the action items (lines 1608-1623), just rendered on the group header when collapsed.
 
