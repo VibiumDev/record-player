@@ -1008,8 +1008,12 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       // First-time visitors: open all panels after trace loads
       const hasStoredPrefs = ["inspector","timeline","controls"].some(k => localStorage.getItem(`trace-panel-${k}`) !== null);
       if (!hasStoredPrefs) {
-        setShowSide(true);
-        setShowTimeline(true);
+        const isMobile = window.innerWidth < 768;
+        const isCompact = window.innerHeight < 500;
+        if (!isMobile && !isCompact) {
+          setShowSide(true);
+          setShowTimeline(true);
+        }
         setShowToolbar(true);
       }
     } catch (e) {
