@@ -438,6 +438,15 @@ function isHumanAction(apiName) {
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────
+function getPanelDefault(key, fallback) {
+  try {
+    const v = localStorage.getItem(`trace-panel-${key}`);
+    if (v === "true") return true;
+    if (v === "false") return false;
+    return fallback;
+  } catch { return fallback; }
+}
+
 function parseUrlParams() {
   try {
     const p = new URLSearchParams(window.location.search);
@@ -796,10 +805,10 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const [dark, setDark] = useState(true);
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [sideW, setSideW] = useState(360);
-  const [showSide, setShowSide] = useState(urlParams.inspector ?? false);
+  const [showSide, setShowSide] = useState(urlParams.inspector ?? getPanelDefault("inspector", false));
   const [timelineH, setTimelineH] = useState(212);
-  const [showTimeline, setShowTimeline] = useState(urlParams.timeline ?? false);
-  const [showToolbar, setShowToolbar] = useState(urlParams.controls ?? true);
+  const [showTimeline, setShowTimeline] = useState(urlParams.timeline ?? getPanelDefault("timeline", false));
+  const [showToolbar, setShowToolbar] = useState(urlParams.controls ?? getPanelDefault("controls", true));
   const [detailH, setDetailH] = useState(160);
   const [showHelp, setShowHelp] = useState(false);
   const helpRef = useRef(false);
@@ -995,11 +1004,24 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       });
 
       setPlayhead(urlParams.at != null ? Math.max(0, Math.min(urlParams.at, duration)) : 0);
+
+      // First-time visitors: open all panels after trace loads
+      const hasStoredPrefs = ["inspector","timeline","controls"].some(k => localStorage.getItem(`trace-panel-${k}`) !== null);
+      if (!hasStoredPrefs) {
+        setShowSide(true);
+        setShowTimeline(true);
+        setShowToolbar(true);
+      }
     } catch (e) {
       setError(e.message);
     }
     setLoading(false);
   }, []);
+
+  // ─── Persist panel state ────────────────────────────────────────────────
+  useEffect(() => { try { localStorage.setItem("trace-panel-inspector", showSide); } catch {} }, [showSide]);
+  useEffect(() => { try { localStorage.setItem("trace-panel-timeline", showTimeline); } catch {} }, [showTimeline]);
+  useEffect(() => { try { localStorage.setItem("trace-panel-controls", showToolbar); } catch {} }, [showToolbar]);
 
   // ─── Drag and drop ──────────────────────────────────────────────────────
   const handleDrop = useCallback((e) => {
