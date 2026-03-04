@@ -533,27 +533,6 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
     addCandidate(candidates, natW, natH, 0, 0, "natural-ratio", true);
   }
 
-  // When no viewport metadata is available, try upscaled coordinate spaces.
-  // This handles screenshot-only traces where JPEGs may be smaller than the original viewport.
-  const hasViewport = !!(snapshotViewport || viewport);
-  if (!hasViewport && natW && natH) {
-    for (const m of [2, 3, 4]) {
-      addCandidate(candidates, natW * m, natH * m, 0, 0, `natural-${m}x-up`);
-    }
-    // Also try common viewport sizes mapped to the natural image dims
-    const commonWidths = [1280, 1920, 1024, 1366, 1440, 800, 375, 390, 414, 768];
-    for (const cw of commonWidths) {
-      if (Math.abs(cw - natW) < 2) continue; // already covered by natural-raw
-      const ch = Math.round(cw * (natH / natW)); // preserve aspect ratio
-      addCandidate(candidates, cw, ch, 0, 0, `inferred-vp-${cw}`);
-    }
-  }
-  if (!hasViewport && screenshot?.width && screenshot?.height) {
-    for (const m of [2, 3, 4]) {
-      addCandidate(candidates, screenshot.width * m, screenshot.height * m, 0, 0, `screenshot-${m}x-up`);
-    }
-  }
-
   if (candidates.length === 0) return null;
 
   const tolerance = 0.12;
