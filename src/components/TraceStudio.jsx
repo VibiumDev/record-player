@@ -677,7 +677,7 @@ const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, vi
           top: imgTop + norm.by,
           width: norm.bw,
           height: norm.bh,
-          border: `2px solid ${color}`,
+          border: `3px solid ${color}`,
           background: `${color}20`,
           borderRadius: 3,
           transition: "left 0.15s, top 0.15s, width 0.15s, height 0.15s",
