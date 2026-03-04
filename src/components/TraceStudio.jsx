@@ -989,18 +989,19 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   // ─── Auto-scroll timeline to keep playhead visible ─────────────────────
   useEffect(() => {
     if (!scrollRef.current || !traceData) return;
-    // Skip auto-scroll while the user is manually scrubbing
-    if (dragging.current) return;
     const el = scrollRef.current;
     const contentW = el.scrollWidth;
     const viewW = el.clientWidth;
     if (contentW <= viewW) return; // no scroll needed
     const playheadX = 56 + (playhead / (traceData.duration || 1)) * (contentW - 56);
     const margin = viewW * 0.3; // keep playhead ~30% from edges
+    const maxStep = dragging.current ? 2 : 6; // slow scroll speed
     if (playheadX < el.scrollLeft + margin) {
-      el.scrollLeft = Math.max(0, playheadX - margin);
+      const target = Math.max(0, playheadX - margin);
+      el.scrollLeft = Math.max(target, el.scrollLeft - maxStep);
     } else if (playheadX > el.scrollLeft + viewW - margin) {
-      el.scrollLeft = playheadX - viewW + margin;
+      const target = playheadX - viewW + margin;
+      el.scrollLeft = Math.min(target, el.scrollLeft + maxStep);
     }
   }, [playhead, traceData]);
 
