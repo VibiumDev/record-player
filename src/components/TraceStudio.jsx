@@ -1085,6 +1085,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       if (key === "Home") { e.preventDefault(); setPlayhead(0); setIsPlaying(false); }
       if (key === "End") { e.preventDefault(); setPlayhead(traceData.duration); setIsPlaying(false); }
       if (key >= "0" && key <= "9") { e.preventDefault(); setPlayhead(traceData.duration * parseInt(key) / 10); setIsPlaying(false); }
+      if (key === "h" || key === "H") { e.preventDefault(); setOverlayEnabled((v) => !v); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1927,6 +1928,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
               ]],
               ["View", [
                 ["D / L", "Toggle dark / light mode"],
+                ["H", "Toggle element highlight"],
                 ["?", "Show this help"],
                 ["Esc", "Close this help"],
               ]],
