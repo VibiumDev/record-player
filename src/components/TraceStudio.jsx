@@ -1230,6 +1230,49 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           Use <code style={{ background: V.bgCard, padding: "1px 4px", borderRadius: 3, color: V.amber }}>Vibium API</code>, <code style={{ background: V.bgCard, padding: "1px 4px", borderRadius: 3, color: V.amber }}>MCP</code>, or <code style={{ background: V.bgCard, padding: "1px 4px", borderRadius: 3, color: V.amber }}>CLI</code> + <code style={{ background: V.bgCard, padding: "1px 4px", borderRadius: 3, color: V.orange }}>Skill</code> to generate traces.<br />
           <a href="https://github.com/VibiumDev/vibium/" target="_blank" rel="noopener noreferrer" style={{ color: V.orange, textDecoration: "none" }}>github.com/VibiumDev/vibium</a>
         </div>
+
+        <button onClick={() => setShowHelp(true)} style={{ background: V.bgCard, border: `1px solid ${V.border}`, color: V.textDim, cursor: "pointer", padding: "5px 12px", borderRadius: 6, fontSize: 13, fontFamily: "inherit", marginTop: 4 }}>
+          Keyboard shortcuts <kbd style={{ marginLeft: 6, padding: "1px 5px", borderRadius: 4, background: V.bg, border: `1px solid ${V.border}`, fontSize: 12 }}>?</kbd>
+        </button>
+
+        {/* Help overlay */}
+        {showHelp && (
+          <div onClick={() => setShowHelp(false)} style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div onClick={(e) => e.stopPropagation()} style={{
+              background: V.bgCard, border: `1px solid ${V.border}`, borderRadius: 12,
+              padding: "28px 36px", maxWidth: 520, width: "90%", color: V.text,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4)", maxHeight: "85vh", overflowY: "auto",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: V.orange }}>Keyboard Shortcuts</span>
+                <span onClick={() => setShowHelp(false)} style={{ cursor: "pointer", color: V.textDim, fontSize: 20, lineHeight: 1 }}>✕</span>
+              </div>
+              <div>
+              {[
+                ["General", [
+                  ["D / L", "Toggle dark / light mode"],
+                  ["?", "Show this help"],
+                  ["Esc", "Close this help"],
+                ]],
+              ].map(([section, shortcuts]) => (
+                <div key={section} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: V.textDim, marginBottom: 8 }}>{section}</div>
+                  {shortcuts.map(([key, desc]) => (
+                    <div key={key} style={{ display: "flex", alignItems: "center", padding: "4px 0", gap: 12 }}>
+                      <kbd style={{ display: "inline-block", minWidth: 48, textAlign: "center", padding: "3px 8px", borderRadius: 5, fontSize: 12, fontFamily: "inherit", fontWeight: 600, background: V.bg, border: `1px solid ${V.border}`, color: V.textMid }}>{key}</kbd>
+                      <span style={{ fontSize: 13, color: V.textMid }}>{desc}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2008,16 +2051,18 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                 ["0 – 9", "Jump to 0% – 90%"],
               ]],
               ["View", [
-                ["D / L", "Toggle dark / light mode"],
+                ["C", "Toggle control panel"],
+                ["T", "Toggle timeline"],
+                ["I", "Toggle inspector"],
                 ["H", "Toggle element highlight"],
+                ["D / L", "Toggle dark / light mode"],
                 ["?", "Show this help"],
                 ["Esc", "Close this help"],
               ]],
               ["URL Parameters", [
-                ["?t=v", "Timeline visible on load"],
-                ["?t=h", "Timeline hidden on load"],
-                ["?i=v", "Inspector visible on load"],
-                ["?i=h", "Inspector hidden on load"],
+                ["?c=v / h", "Control panel visible / hidden"],
+                ["?t=v / h", "Timeline visible / hidden"],
+                ["?i=v / h", "Inspector visible / hidden"],
                 ["?at=5000", "Jump to 5000ms"],
                 ["?at=5s", "Jump to 5 seconds"],
                 ["?at=1:23.45", "Jump to 1m 23.45s"],
