@@ -1567,12 +1567,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                       <span style={{ fontSize: 13, fontWeight: 700, color: isActive ? V.purple : V.textMid, flex: 1 }}>{g.title}</span>
                       {isCollapsed && <span style={{ fontSize: 11, color: V.textDim, background: V.bgCard, padding: "1px 6px", borderRadius: 8 }}>{childCount}</span>}
                       <span style={{ fontSize: 12, color: V.textDim, flexShrink: 0 }}>{fmt(g.startTime)}</span>
-                      {isCollapsed && isActive && (() => {
-                        const activeAction = filteredActions.find(a => a.startTime >= g.startTime && a.endTime <= g.endTime && playhead >= a.startTime && playhead <= a.endTime + 200);
-                        if (!activeAction) return null;
-                        const end = activeAction.endTime || activeAction.startTime;
-                        const duration = end - activeAction.startTime;
-                        const progress = duration > 0 ? Math.min(1, Math.max(0, (playhead - activeAction.startTime) / duration)) : (playhead >= activeAction.startTime ? 1 : 0);
+                      {isCollapsed && playhead >= g.startTime && playhead <= g.endTime && (() => {
+                        const groupDuration = g.endTime - g.startTime;
+                        const progress = groupDuration > 0 ? Math.min(1, Math.max(0, (playhead - g.startTime) / groupDuration)) : 0;
                         return (
                           <div style={{
                             position: "absolute", bottom: 0, left: 0, right: 0, height: 2,
