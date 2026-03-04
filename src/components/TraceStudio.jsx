@@ -450,12 +450,14 @@ function parseUrlParams() {
       }
       if (isNaN(atMs)) atMs = null;
     }
+    const controls = val("controls", "c");
     return {
       timeline: timeline === "visible" || timeline === "v" ? true : timeline === "hidden" || timeline === "h" ? false : null,
       inspector: inspector === "visible" || inspector === "v" ? true : inspector === "hidden" || inspector === "h" ? false : null,
+      controls: controls === "visible" || controls === "v" ? true : controls === "hidden" || controls === "h" ? false : null,
       at: atMs,
     };
-  } catch { return { timeline: null, inspector: null, at: null }; }
+  } catch { return { timeline: null, inspector: null, controls: null, at: null }; }
 }
 
 // ─── Action Overlay (cursor, highlight, ripple, caret) ──────────────────────
@@ -778,7 +780,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const [showSide, setShowSide] = useState(urlParams.inspector ?? false);
   const [timelineH, setTimelineH] = useState(212);
   const [showTimeline, setShowTimeline] = useState(urlParams.timeline ?? false);
-  const [showToolbar, setShowToolbar] = useState(true);
+  const [showToolbar, setShowToolbar] = useState(urlParams.controls ?? true);
   const [detailH, setDetailH] = useState(160);
   const [showHelp, setShowHelp] = useState(false);
   const helpRef = useRef(false);
@@ -1106,6 +1108,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       if (key === "End") { e.preventDefault(); setPlayhead(traceData.duration); setIsPlaying(false); }
       if (key >= "0" && key <= "9") { e.preventDefault(); setPlayhead(traceData.duration * parseInt(key) / 10); setIsPlaying(false); }
       if (key === "h" || key === "H") { e.preventDefault(); setOverlayEnabled((v) => !v); }
+      if (key === "c" || key === "C") { e.preventDefault(); setShowToolbar((v) => !v); }
+      if (key === "t" || key === "T") { e.preventDefault(); setShowTimeline((v) => !v); }
+      if (key === "i" || key === "I") { e.preventDefault(); setShowSide((v) => !v); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
