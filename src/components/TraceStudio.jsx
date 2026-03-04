@@ -233,7 +233,16 @@ function processTraceEvents(events) {
   consoleEvents.sort((a, b) => (a.time || 0) - (b.time || 0));
   screenshotRefs.sort((a, b) => (a.time || 0) - (b.time || 0));
 
-  return { actions, consoleEvents, contextOptions, screenshotRefs, groups, snapshotMetaMap };
+  // Derive fallback viewport from first screencast-frame dimensions
+  let fallbackViewport = null;
+  if (screenshotRefs.length > 0) {
+    const first = screenshotRefs[0];
+    if (first.width && first.height) {
+      fallbackViewport = { width: first.width, height: first.height };
+    }
+  }
+
+  return { actions, consoleEvents, contextOptions, screenshotRefs, groups, snapshotMetaMap, fallbackViewport };
 }
 
 // ─── Parse network events (BiDi format) ─────────────────────────────────────
@@ -507,6 +516,16 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
       addCandidate(candidates, viewport.width, viewport.height, -scrollX, -scrollY, "context-viewport-scroll-add");
     }
     addCandidate(candidates, viewport.width, viewport.height, 0, 0, "context-viewport-ratio", true);
+  }
+
+  // Use per-screenshot dimensions as viewport candidate when no snapshot viewport exists
+  if (!snapshotViewport && screenshot?.width && screenshot?.height) {
+    addCandidate(candidates, screenshot.width, screenshot.height, 0, 0, "screencast-frame-viewport");
+    if (scrollX || scrollY) {
+      addCandidate(candidates, screenshot.width, screenshot.height, scrollX, scrollY, "screencast-frame-viewport-scroll-sub");
+      addCandidate(candidates, screenshot.width, screenshot.height, -scrollX, -scrollY, "screencast-frame-viewport-scroll-add");
+    }
+    addCandidate(candidates, screenshot.width, screenshot.height, 0, 0, "screencast-frame-viewport-ratio", true);
   }
 
   // Boost factors help when trace coords are in CSS pixels but screenshot metadata is in device pixels.
@@ -1398,8 +1417,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={false} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
-                {overlayEnabled && <PersistentCursor action={(() => { const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
+                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport || (currentScreenshot?.width && currentScreenshot?.height ? { width: currentScreenshot.width, height: currentScreenshot.height } : traceData?.fallbackViewport)} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={false} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
+                {overlayEnabled && <PersistentCursor action={(() => { const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport || (currentScreenshot?.width && currentScreenshot?.height ? { width: currentScreenshot.width, height: currentScreenshot.height } : traceData?.fallbackViewport)} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
