@@ -1560,9 +1560,10 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                       {a.duration > 0 ? `${a.duration}ms` : fmt(a.startTime)}
                     </span>
                     {/* Playhead position indicator */}
-                    {(isActive || selectedAction === a) && playhead >= a.startTime && playhead <= (a.endTime || a.startTime) && (() => {
-                      const duration = (a.endTime || a.startTime) - a.startTime;
-                      const progress = duration > 0 ? Math.min(1, Math.max(0, (playhead - a.startTime) / duration)) : 0;
+                    {(isActive || selectedAction === a) && playhead >= a.startTime && (() => {
+                      const end = a.endTime || a.startTime;
+                      const duration = end - a.startTime;
+                      const progress = duration > 0 ? Math.min(1, Math.max(0, (playhead - a.startTime) / duration)) : (playhead >= a.startTime ? 1 : 0);
                       return (
                         <div style={{
                           position: "absolute", bottom: 0, left: 0, right: 0, height: 2,
@@ -1570,7 +1571,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                         }}>
                           <div style={{
                             width: `${progress * 100}%`, height: "100%",
-                            background: c, borderRadius: 1, transition: "width 0.1s linear",
+                            background: c, borderRadius: 1,
                           }} />
                         </div>
                       );
