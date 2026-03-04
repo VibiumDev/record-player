@@ -778,6 +778,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const [showSide, setShowSide] = useState(urlParams.inspector ?? false);
   const [timelineH, setTimelineH] = useState(212);
   const [showTimeline, setShowTimeline] = useState(urlParams.timeline ?? false);
+  const [showToolbar, setShowToolbar] = useState(true);
   const [detailH, setDetailH] = useState(160);
   const [showHelp, setShowHelp] = useState(false);
   const helpRef = useRef(false);
@@ -1236,7 +1237,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       <style>{`.hide-scrollbar::-webkit-scrollbar{display:none}.hide-scrollbar{scrollbar-width:none}`}</style>
 
       {/* ─── Top bar ───────────────────────────────────────────── */}
-      <div style={{ height: mobile ? 52 : 66, background: V.bgCard, borderBottom: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: mobile ? "0 8px" : "0 14px", gap: mobile ? 6 : 12, flexShrink: 0 }}>
+      {showToolbar ? (<div style={{ height: mobile ? 52 : 66, background: V.bgCard, borderBottom: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: mobile ? "0 8px" : "0 14px", gap: mobile ? 6 : 12, flexShrink: 0, position: "relative" }}>
         <img src={VIBIUM_LOGO} alt="V" style={{ width: 22, height: 28, borderRadius: 4 }} />
         {!mobile && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Trace</span>}
         <div style={{ flex: 1 }} />
@@ -1278,7 +1279,31 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           onClick={() => setDark(!dark)}
           style={{ background: V.bgPanel, border: `1px solid ${V.border}`, color: V.textMid, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 14, fontFamily: "inherit" }}
         >{dark ? "☀︎" : "☾"}</button>}
-      </div>
+        {/* Collapse toolbar chevron */}
+        <div data-chevron="1" onClick={() => setShowToolbar(false)} style={{
+          position: "absolute", bottom: -8, left: "50%", transform: "translateX(-50%)",
+          width: 28, height: 16, borderRadius: 4, background: V.bgCard, border: `1px solid ${V.border}`,
+          display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 10,
+          transition: "background 0.15s",
+        }}
+          onMouseEnter={(e) => e.currentTarget.style.background = V.bgPanel}
+          onMouseLeave={(e) => e.currentTarget.style.background = V.bgCard}
+        >
+          <span style={{ fontSize: 13, color: V.textDim }}>▴</span>
+        </div>
+      </div>) : (
+        /* Collapsed toolbar — expand chevron */
+        <div onClick={() => setShowToolbar(true)} style={{
+          height: 20, flexShrink: 0, background: V.bgPanel, borderBottom: `1px solid ${V.border}`,
+          display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+          transition: "background 0.15s",
+        }}
+          onMouseEnter={(e) => e.currentTarget.style.background = V.bgCard}
+          onMouseLeave={(e) => e.currentTarget.style.background = V.bgPanel}
+        >
+          <span style={{ fontSize: 13, color: V.textDim }}>▾</span>
+        </div>
+      )}
 
       {/* ─── Main area ─────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
