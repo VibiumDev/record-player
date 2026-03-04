@@ -815,9 +815,21 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         setDetailH(Math.max(60, Math.min(500, detailDragStart.current.h + delta)));
       }
       if (dragging.current && scrollRef.current) {
-        const rect = scrollRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left + scrollRef.current.scrollLeft - 56;
-        const tw = scrollRef.current.scrollWidth - 56;
+        const el = scrollRef.current;
+        const rect = el.getBoundingClientRect();
+        // Gentle edge-scrolling: when the cursor is near the edges, scroll slowly
+        const edgeZone = 60; // px from edge to start scrolling
+        const maxSpeed = 4;  // px per mousemove event (low velocity)
+        const cursorX = e.clientX - rect.left;
+        if (cursorX < edgeZone) {
+          const t = 1 - cursorX / edgeZone; // 0..1, stronger near edge
+          el.scrollLeft = Math.max(0, el.scrollLeft - maxSpeed * t);
+        } else if (cursorX > rect.width - edgeZone) {
+          const t = 1 - (rect.width - cursorX) / edgeZone;
+          el.scrollLeft = Math.min(el.scrollWidth - rect.width, el.scrollLeft + maxSpeed * t);
+        }
+        const x = e.clientX - rect.left + el.scrollLeft - 56;
+        const tw = el.scrollWidth - 56;
         const dur = traceData?.duration || 1;
         setPlayhead(Math.max(0, Math.min(dur, (x / tw) * dur)));
       }
@@ -977,6 +989,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   // ─── Auto-scroll timeline to keep playhead visible ─────────────────────
   useEffect(() => {
     if (!scrollRef.current || !traceData) return;
+    // Skip auto-scroll while the user is manually scrubbing
+    if (dragging.current) return;
     const el = scrollRef.current;
     const contentW = el.scrollWidth;
     const viewW = el.clientWidth;
