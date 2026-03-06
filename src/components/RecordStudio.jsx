@@ -1496,7 +1496,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
             ref={screenshotContainerRef}
             style={{ flex: 1, background: V.bg, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
             {/* Current group label */}
-            {playhead > 0 && currentGroup && (
+            {overlayEnabled && playhead > 0 && currentGroup && (
               <div style={{ position: "absolute", top: 8, left: 12, zIndex: 10, padding: "4px 10px", background: V.overlayBg, backdropFilter: "blur(8px)", borderRadius: 6, pointerEvents: "none" }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: V.purple, letterSpacing: "0.02em" }}>{currentGroup.title}</span>
               </div>
@@ -1545,7 +1545,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
             )}
 
             {/* Current action overlay */}
-            {playhead > 0 && currentAction && (
+            {overlayEnabled && playhead > 0 && currentAction && (
               <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", background: V.overlayBg, backdropFilter: "blur(12px)", border: `1px solid ${actionColor(currentAction.apiName)}50`, borderRadius: 8, padding: "8px 16px", display: "flex", alignItems: "center", gap: 8, zIndex: 10, maxWidth: "80%" }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: actionColor(currentAction.apiName), whiteSpace: "nowrap" }}>{humanizeAction(currentAction)}</span>
               </div>
