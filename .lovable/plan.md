@@ -1,40 +1,26 @@
 
 
-## Plan: Auto-switch to stacked layout on narrow/portrait screens
+## Plan: Expand screenshot when inspector collapsed in stacked mode
 
-### What changes
-In `src/components/TraceStudio.jsx`, add an effect that automatically switches `layoutMode` to `"stacked"` when the viewport is narrow (< 768px wide) or in portrait orientation, and back to `"main"` when it widens. This uses the existing `mobile` state plus a new portrait-orientation media query check.
+### Problem
+When inspector is collapsed in stacked mode, the screenshot area keeps its fixed height (`screenshotH || "50%"`), leaving empty space. It should expand to fill the available space.
 
-### Implementation
+### Change (single file: `src/components/TraceStudio.jsx`)
 
-**1. Add a `useEffect` that auto-sets layout based on screen size (~after the existing mobile/compact collapse effect, line ~857)**
+**Line 1472** — Change the screenshot container's `flex` and `height` in stacked mode to account for `showSide`:
 
-When `mobile` becomes `true` OR when the viewport is in portrait and narrow (e.g. < 900px), set `layoutMode` to `"stacked"`. When `mobile` becomes `false` and orientation is landscape/wide, restore `"main"`.
-
-```javascript
-useEffect(() => {
-  if (mobile) {
-    setLayoutMode("stacked");
-  }
-}, [mobile]);
-```
-
-We also listen for orientation/resize changes for tablets in portrait:
+- When `layoutMode === "stacked"` and `showSide` is true: keep current behavior (`flex: "none"`, `height: screenshotH || "50%"`)
+- When `layoutMode === "stacked"` and `showSide` is false: use `flex: 1` and no fixed height, so it fills available space above the expand bar and timeline
 
 ```javascript
-useEffect(() => {
-  const check = () => {
-    const portrait = window.innerHeight > window.innerWidth;
-    const narrow = window.innerWidth < 900;
-    if (portrait && narrow) setLayoutMode("stacked");
-  };
-  check();
-  window.addEventListener("resize", check);
-  return () => window.removeEventListener("resize", check);
-}, []);
+// Before:
+flex: layoutMode === "stacked" ? "none" : 1,
+height: layoutMode === "stacked" ? (screenshotH || "50%") : undefined,
+
+// After:
+flex: (layoutMode === "stacked" && showSide) ? "none" : 1,
+height: (layoutMode === "stacked" && showSide) ? (screenshotH || "50%") : undefined,
 ```
 
-**2. Show the layout toggle on mobile too** — remove the `!mobile &&` guard on the toggle button (~line 1413) so users can manually switch back if desired.
-
-This is a lightweight change: two small effects and removing one conditional wrapper.
+This is a one-line change that makes the screenshot area expand to fill available space when the inspector is collapsed in stacked mode.
 
