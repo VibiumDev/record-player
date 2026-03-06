@@ -1,26 +1,17 @@
 
 
-## Plan: Expand screenshot when inspector collapsed in stacked mode
+## Plan: Fix inspector chevron direction in stacked mode
 
 ### Problem
-When inspector is collapsed in stacked mode, the screenshot area keeps its fixed height (`screenshotH || "50%"`), leaving empty space. It should expand to fill the available space.
+In stacked mode, both the collapse and expand chevrons for the inspector panel show `▾` (down arrow). The collapse chevron on the divider (when inspector is visible) should point up (`▴`) since collapsing hides the panel below, and the expand chevron (when collapsed) should point down (`▾`) to indicate expanding downward.
 
 ### Change (single file: `src/components/TraceStudio.jsx`)
 
-**Line 1472** — Change the screenshot container's `flex` and `height` in stacked mode to account for `showSide`:
-
-- When `layoutMode === "stacked"` and `showSide` is true: keep current behavior (`flex: "none"`, `height: screenshotH || "50%"`)
-- When `layoutMode === "stacked"` and `showSide` is false: use `flex: 1` and no fixed height, so it fills available space above the expand bar and timeline
-
-```javascript
-// Before:
-flex: layoutMode === "stacked" ? "none" : 1,
-height: layoutMode === "stacked" ? (screenshotH || "50%") : undefined,
-
-// After:
-flex: (layoutMode === "stacked" && showSide) ? "none" : 1,
-height: (layoutMode === "stacked" && showSide) ? (screenshotH || "50%") : undefined,
+**Line 1576** — Change the stacked divider's collapse chevron from `▾` to `▴`:
+```
+// Before:  >▾</div>
+// After:   >▴</div>
 ```
 
-This is a one-line change that makes the screenshot area expand to fill available space when the inspector is collapsed in stacked mode.
+This makes it consistent: `▴` means "collapse inspector upward" and `▾` means "expand inspector downward."
 
