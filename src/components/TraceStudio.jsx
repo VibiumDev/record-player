@@ -856,6 +856,22 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
     if (mobile || compact) { setShowSide(false); setShowTimeline(false); setShowDetail(false); }
   }, [mobile, compact]);
 
+  // Auto-switch to stacked layout on narrow/portrait screens
+  useEffect(() => {
+    if (mobile) setLayoutMode("stacked");
+  }, [mobile]);
+
+  useEffect(() => {
+    const check = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      const narrow = window.innerWidth < 900;
+      if (portrait && narrow) setLayoutMode("stacked");
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   // Merge brand + surface colors for current theme
   const V = useMemo(() => ({ ...brand, ...(dark ? darkSurface : lightSurface) }), [dark]);
   const levelColors = useMemo(() => ({ log: V.textMid, info: brand.amber, warn: brand.sunset, error: "#f87171", warning: brand.sunset }), [V]);
@@ -1410,11 +1426,11 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           title={overlayEnabled ? "Disable highlight" : "Enable highlight"}
           style={{ background: overlayEnabled ? V.orange + "18" : "none", border: overlayEnabled ? `1px solid ${V.orange}40` : "1px solid transparent", color: overlayEnabled ? V.orange : V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", outline: "none" }}
         >🔦</button>
-        {!mobile && <button
+        <button
           onClick={() => setLayoutMode(m => m === "main" ? "stacked" : "main")}
           title={layoutMode === "main" ? "Stacked layout (V)" : "Default layout (V)"}
           style={{ background: layoutMode === "stacked" ? V.orange + "18" : "none", border: layoutMode === "stacked" ? `1px solid ${V.orange}40` : "1px solid transparent", color: layoutMode === "stacked" ? V.orange : V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", outline: "none" }}
-        >{layoutMode === "stacked" ? "▤" : "▥"}</button>}
+        >{layoutMode === "stacked" ? "▤" : "▥"}</button>
         <button
           onClick={() => { setTraceData(null); setFileList([]); }}
           style={{ background: V.bgCard, border: `1px solid ${V.border}`, color: V.textDim, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: mobile ? 12 : 14, fontFamily: "inherit" }}
