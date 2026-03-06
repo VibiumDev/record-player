@@ -836,6 +836,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
   // ─── Mobile detection ─────────────────────────────────────────────────
   const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [compact, setCompact] = useState(() => typeof window !== "undefined" && window.innerHeight < 500);
+  const [logoSpinning, setLogoSpinning] = useState(false);
   useEffect(() => {
     const mqW = window.matchMedia("(max-width: 767px)");
     const mqH = window.matchMedia("(max-height: 499px)");
@@ -1307,7 +1308,17 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
           {dark ? "☀︎" : "☾"}
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src={VIBIUM_LOGO_HI} alt="V" style={{ width: 48, height: 62 }} />
+          <img
+            src={VIBIUM_LOGO_HI} alt="V"
+            onClick={() => { if (mobile) setLogoSpinning(s => !s); }}
+            onMouseEnter={() => { if (!mobile) setLogoSpinning(true); }}
+            onMouseLeave={() => { if (!mobile) setLogoSpinning(false); }}
+            style={{
+              width: 48, height: 62, cursor: mobile ? "pointer" : "default",
+              animation: logoSpinning ? "spin-record 3s linear infinite" : "none",
+              transition: "transform 0.3s ease-out",
+            }}
+          />
           <span style={{ fontSize: 24, fontWeight: 700, color: V.orange }}>Vibium Record Player</span>
         </div>
         <div style={{ fontSize: 14, color: V.textDim, marginTop: -4 }}>player.vibium.dev</div>
@@ -1389,7 +1400,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
 
   return (
     <div onDrop={handleDrop} onDragOver={handleDragOver} style={{ width: "100%", height: "100vh", background: V.bg, color: V.text, fontFamily: "'SF Mono', 'Fira Code', monospace", display: "flex", flexDirection: "column", overflow: "hidden", fontSize: 16, userSelect: "none" }}>
-      <style>{`.hide-scrollbar::-webkit-scrollbar{display:none}.hide-scrollbar{scrollbar-width:none}`}</style>
+      <style>{`.hide-scrollbar::-webkit-scrollbar{display:none}.hide-scrollbar{scrollbar-width:none}@keyframes spin-record{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
       {/* ─── Top bar ───────────────────────────────────────────── */}
       {showToolbar ? (<div style={{ height: mobile ? 52 : 66, background: V.bgCard, borderBottom: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: mobile ? "0 8px" : "0 14px", gap: mobile ? 6 : 12, flexShrink: 0, position: "relative" }}>
