@@ -1,32 +1,56 @@
 
 
-## Plan: Only auto-open panels on first trace load if there's room
+## Plan: Add stacked (single-column) layout mode
 
-### Change (single file: `src/components/TraceStudio.jsx`)
+### Concept
+Add a `layoutMode` state (`"main"` | `"stacked"`) toggled from the toolbar. In stacked mode, the screenshot and inspector render as vertically stacked rows instead of the default side-by-side layout.
 
-In the first-time-visitor auto-open block (~line 1008), add the `mobile`/`compact` guard:
+### Changes (single file: `src/components/TraceStudio.jsx`)
 
+**1. New state + persistence (~near other panel states)**
 ```javascript
-// Current:
-const hasStoredPrefs = ["inspector","timeline","controls"].some(k => localStorage.getItem(`trace-panel-${k}`) !== null);
-if (!hasStoredPrefs) {
-  setShowSide(true);
-  setShowTimeline(true);
-  setShowToolbar(true);
-}
-
-// Change to:
-const hasStoredPrefs = ["inspector","timeline","controls"].some(k => localStorage.getItem(`trace-panel-${k}`) !== null);
-if (!hasStoredPrefs) {
-  const isMobile = window.innerWidth < 768;
-  const isCompact = window.innerHeight < 500;
-  if (!isMobile && !isCompact) {
-    setShowSide(true);
-    setShowTimeline(true);
-  }
-  setShowToolbar(true); // controls bar always opens
-}
+const [layoutMode, setLayoutMode] = useState(getPanelDefault("layout", "main"));
+```
+```javascript
+useEffect(() => { try { localStorage.setItem("trace-panel-layout", layoutMode); } catch {} }, [layoutMode]);
 ```
 
-Uses the same 768px/500px thresholds as the existing `mobile`/`compact` detection. Controls toolbar still opens (it's minimal), but inspector and timeline only open when there's room.
+**2. Toolbar toggle button (after highlight toggle)**
+```javascript
+<button
+  onClick={() => setLayoutMode(m => m === "main" ? "stacked" : "main")}
+  title={layoutMode === "main" ? "Stacked layout" : "Default layout"}
+  style={{ /* same style as loop/highlight toggles */ }}
+>
+  {layoutMode === "stacked" ? "▤" : "▥"}
+</button>
+```
+
+**3. Main area layout change**
+
+- **`"main"` (current behavior):** No changes — horizontal flex with screenshot + divider + inspector side panel.
+- **`"stacked"`:** Single column flex:
+
+```text
+┌─────────────────────────────┐
+│  Toolbar (controls)         │
+├─────────────────────────────┤
+│  Screenshot + overlays      │
+│  (resizable height)         │
+├── horizontal divider ───────┤
+│  Inspector tabs (full width)│
+├─────────────────────────────┤
+│  Timeline                   │
+└─────────────────────────────┘
+```
+
+- Main area uses `flexDirection: "column"` instead of `"row"`
+- Screenshot gets a controlled height (`screenshotH` state, default ~50%) with horizontal resize divider
+- Inspector fills remaining vertical space at full width
+- Side panel divider/width not rendered
+- `showSide` still controls inspector visibility
+
+**4. Keyboard shortcut:** `V` key toggles layout mode.
+
+**5. Mobile:** Hide toggle on mobile (already effectively stacked).
 
