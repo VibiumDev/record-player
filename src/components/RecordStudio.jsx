@@ -1404,7 +1404,11 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
 
       {/* ─── Top bar ───────────────────────────────────────────── */}
       {showToolbar ? (<div style={{ height: mobile ? 52 : 66, background: V.bgCard, borderBottom: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: mobile ? "0 8px" : "0 14px", gap: mobile ? 6 : 12, flexShrink: 0, position: "relative" }}>
-        <img src={VIBIUM_LOGO} alt="V" style={{ width: 22, height: 28, borderRadius: 4 }} />
+        <img src={VIBIUM_LOGO} alt="V"
+          onClick={() => { if (mobile) setLogoSpinning(s => !s); }}
+          onMouseEnter={() => { if (!mobile) setLogoSpinning(true); }}
+          onMouseLeave={() => { if (!mobile) setLogoSpinning(false); }}
+          style={{ width: 22, height: 28, borderRadius: 4, cursor: mobile ? "pointer" : "default", animation: logoSpinning ? "spin-record 3s linear infinite" : "none" }} />
         {!mobile && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Player</span>}
         <div style={{ flex: 1 }} />
 
