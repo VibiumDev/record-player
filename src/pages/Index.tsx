@@ -1,7 +1,7 @@
-import TraceStudio from "@/components/TraceStudio";
+import RecordStudio from "@/components/RecordStudio";
 
 const Index = () => {
-  return <TraceStudio />;
+  return <RecordStudio />;
 };
 
 export default Index;
