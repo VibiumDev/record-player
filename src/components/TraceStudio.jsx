@@ -1573,7 +1573,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
             }}
               onMouseEnter={(e) => { e.currentTarget.style.color = V.orange; e.currentTarget.style.borderColor = V.orange; }}
               onMouseLeave={(e) => { e.currentTarget.style.color = V.textDim; e.currentTarget.style.borderColor = V.border; }}
-            >▴</div>
+            >▾</div>
           </div>
         )}
 
@@ -1938,7 +1938,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
             onMouseEnter={(e) => e.currentTarget.style.background = V.bgCard}
             onMouseLeave={(e) => e.currentTarget.style.background = V.bgPanel}
           >
-            <span style={{ fontSize: 13, color: V.textDim }}>▾</span>
+            <span style={{ fontSize: 13, color: V.textDim }}>▴</span>
           </div>
           )
         )}
