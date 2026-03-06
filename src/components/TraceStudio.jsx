@@ -1426,11 +1426,11 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           title={overlayEnabled ? "Disable highlight" : "Enable highlight"}
           style={{ background: overlayEnabled ? V.orange + "18" : "none", border: overlayEnabled ? `1px solid ${V.orange}40` : "1px solid transparent", color: overlayEnabled ? V.orange : V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", outline: "none" }}
         >🔦</button>
-        <button
+        {!mobile && <button
           onClick={() => setLayoutMode(m => m === "main" ? "stacked" : "main")}
           title={layoutMode === "main" ? "Stacked layout (V)" : "Default layout (V)"}
           style={{ background: layoutMode === "stacked" ? V.orange + "18" : "none", border: layoutMode === "stacked" ? `1px solid ${V.orange}40` : "1px solid transparent", color: layoutMode === "stacked" ? V.orange : V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", outline: "none" }}
-        >{layoutMode === "stacked" ? "▤" : "▥"}</button>
+        >{layoutMode === "stacked" ? "▤" : "▥"}</button>}
         <button
           onClick={() => { setTraceData(null); setFileList([]); }}
           style={{ background: V.bgCard, border: `1px solid ${V.border}`, color: V.textDim, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: mobile ? 12 : 14, fontFamily: "inherit" }}
