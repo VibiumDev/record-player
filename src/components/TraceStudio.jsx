@@ -2173,7 +2173,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       )}
 
       {/* ─── Status bar ────────────────────────────────────────── */}
-      {!compact && !mobile && <div ref={footerRef} style={{ height: 24, background: V.bg, borderTop: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: "0 14px", gap: 14, fontSize: 13, color: V.textDim, flexShrink: 0 }}>
+      {!compact && !mobile && showTimeline && <div ref={footerRef} style={{ height: 24, background: V.bg, borderTop: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: "0 14px", gap: 14, fontSize: 13, color: V.textDim, flexShrink: 0 }}>
         {!footerNarrow && <>
           <span><span style={{ color: traceData.actions.some(a => a.error) ? "#ef4444" : "#22c55e" }}>●</span> {traceData.actions.some(a => a.error) ? "Has errors" : "OK"}</span>
           <span>{filteredActions.length}{actionFilter !== "all" ? `/${traceData.actions.length}` : ""} actions</span>
