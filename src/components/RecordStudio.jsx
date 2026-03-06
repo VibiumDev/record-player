@@ -1308,7 +1308,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src={VIBIUM_LOGO_HI} alt="V" style={{ width: 48, height: 62 }} />
-          <span style={{ fontSize: 24, fontWeight: 700, color: V.orange }}>Vibium Player</span>
+          <span style={{ fontSize: 24, fontWeight: 700, color: V.orange }}>Vibium Record Player</span>
         </div>
         <div style={{ fontSize: 14, color: V.textDim, marginTop: -4 }}>player.vibium.dev</div>
         <div style={{ color: V.textDim, fontSize: 17 }}>Drop a Vibium <code style={{ background: V.bgCard, padding: "2px 6px", borderRadius: 4, color: V.amber }}>record.zip</code> here</div>
