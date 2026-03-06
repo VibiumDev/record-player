@@ -1,25 +1,41 @@
 
+Root cause I found: the landing-page logo references `animation: "spin-record 3s linear infinite"`, but the `@keyframes spin-record` CSS is only injected inside the **loaded-record UI branch** (`traceData` path).  
+So when you’re on true landing (`!traceData`), the animation name exists but keyframes do not, so hover/tap does nothing.
 
-## Plan: Rename localStorage keys and DOM references
+Implementation plan:
+1. Make `spin-record` keyframes globally available
+   - Move the keyframes to a shared/global place (best: `src/index.css`, or a top-level style block rendered regardless of `traceData`).
+   - Keep the same animation name (`spin-record`) so existing inline styles continue to work.
 
-### Changes (single file: `src/components/TraceStudio.jsx`)
+2. Keep one consistent interaction model for both logos
+   - Ensure both landing logo (`VIBIUM_LOGO_HI`) and toolbar logo (`VIBIUM_LOGO`) use identical handlers:
+     - Desktop: start on `onMouseEnter`, stop on `onMouseLeave`
+     - Mobile: toggle on `onClick`
+   - Reuse the same `logoSpinning` state (already present).
 
-**1. localStorage keys** — Replace all `trace-panel-` prefixes with `record-panel-`:
-- Line 443: `trace-panel-${key}` → `record-panel-${key}`
-- Line 1052: `trace-panel-${k}` → `record-panel-${k}`
-- Line 1069: `trace-panel-inspector` → `record-panel-inspector`
-- Line 1070: `trace-panel-timeline` → `record-panel-timeline`
-- Line 1071: `trace-panel-controls` → `record-panel-controls`
-- Line 1072: `trace-panel-layout` → `record-panel-layout`
+3. Improve visual reliability
+   - Add `transformOrigin: "50% 50%"` and optionally `willChange: "transform"` to both logo styles for smoother, obvious spin.
+   - Keep rotation speed at `3s linear infinite` unless you want slower/faster.
 
-**2. Component/function name** — `TraceStudio` → `RecordStudio`:
-- Line 789: `forwardRef(function TraceStudio` → `forwardRef(function RecordStudio`
-- The `export default` at the bottom
+4. Verify true landing route behavior
+   - Confirm landing route has no `record` query param (because `?record=...` bypasses landing entirely).
+   - Validate that animation now works on:
+     - landing logo (no trace loaded)
+     - toolbar logo (trace loaded)
 
-**3. UI text** (from the previously approved but not yet implemented branding plan):
-- Line 1330: sample link text and URL — `/?trace=vibium-demo-trace.zip` → `/?record=vibium-demo-record.zip`, `"view a sample trace"` → `"play a sample recording"`
+Technical details to apply:
+- Current affected file: `src/components/RecordStudio.jsx`
+- Recommended global style target: `src/index.css`
+- Key snippet to centralize:
+```css
+@keyframes spin-record {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+```
 
-Note: Internal variable names like `traceData`, `processTraceEvents` stay unchanged since they relate to the `.trace` file format.
-
-This will be combined with the full rename refactor (file rename to `RecordStudio.jsx`, `index.html` meta updates, `README.md`, etc.) from the previously approved plan.
-
+Validation checklist:
+- Desktop landing: hover logo starts spin, leaving logo stops spin.
+- Mobile landing: first tap starts spin, second tap stops spin.
+- Loaded-record UI still behaves the same.
+- No console CSS errors and no regressions in other animations.
