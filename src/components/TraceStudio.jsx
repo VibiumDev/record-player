@@ -814,6 +814,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const helpRef = useRef(false);
   const [maskSensitive, setMaskSensitive] = useState(true);
   const [showDetail, setShowDetail] = useState(false);
+  const [layoutMode, setLayoutMode] = useState(getPanelDefault("layout", "main"));
+  const [screenshotH, setScreenshotH] = useState(null); // null = 50% default
   const playRef = useRef(null);
   const scrollRef = useRef(null);
   const filmstripRef = useRef(null);
@@ -862,6 +864,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const timelineDrag = useRef(false);
   const detailDrag = useRef(false);
   const detailDragStart = useRef({ y: 0, h: 0 });
+  const stackedDrag = useRef(false);
+  const stackedDragStart = useRef({ y: 0, h: 0 });
+  const mainAreaRef = useRef(null);
 
   // ─── Panel resize handlers ──────────────────────────────────────────────
   useEffect(() => {
@@ -884,6 +889,10 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         const delta = detailDragStart.current.y - clientY;
         setDetailH(Math.max(60, Math.min(500, detailDragStart.current.h + delta)));
       }
+      if (stackedDrag.current) {
+        const delta = clientY - stackedDragStart.current.y;
+        setScreenshotH(Math.max(100, Math.min(800, stackedDragStart.current.h + delta)));
+      }
       if (dragging.current && scrollRef.current) {
         const el = scrollRef.current;
         const rect = el.getBoundingClientRect();
@@ -903,7 +912,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         setPlayhead(Math.max(0, Math.min(dur, (x / tw) * dur)));
       }
       // Prevent scrolling while dragging dividers on touch
-      if ((sideDrag.current || timelineDrag.current || detailDrag.current || dragging.current) && e.cancelable) {
+      if ((sideDrag.current || timelineDrag.current || detailDrag.current || stackedDrag.current || dragging.current) && e.cancelable) {
         e.preventDefault();
       }
     };
@@ -911,6 +920,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       sideDrag.current = false;
       timelineDrag.current = false;
       detailDrag.current = false;
+      stackedDrag.current = false;
       dragging.current = false;
       document.body.style.cursor = "";
     };
@@ -1043,6 +1053,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   useEffect(() => { try { localStorage.setItem("trace-panel-inspector", showSide); } catch {} }, [showSide]);
   useEffect(() => { try { localStorage.setItem("trace-panel-timeline", showTimeline); } catch {} }, [showTimeline]);
   useEffect(() => { try { localStorage.setItem("trace-panel-controls", showToolbar); } catch {} }, [showToolbar]);
+  useEffect(() => { try { localStorage.setItem("trace-panel-layout", layoutMode); } catch {} }, [layoutMode]);
 
   // ─── Drag and drop ──────────────────────────────────────────────────────
   const handleDrop = useCallback((e) => {
@@ -1186,6 +1197,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       if (key === "c" || key === "C") { e.preventDefault(); setShowToolbar((v) => !v); }
       if (key === "t" || key === "T") { e.preventDefault(); setShowTimeline((v) => !v); }
       if (key === "i" || key === "I") { e.preventDefault(); setShowSide((v) => !v); }
+      if (key === "v" || key === "V") { e.preventDefault(); setLayoutMode((m) => m === "main" ? "stacked" : "main"); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1398,6 +1410,11 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           title={overlayEnabled ? "Disable highlight" : "Enable highlight"}
           style={{ background: overlayEnabled ? V.orange + "18" : "none", border: overlayEnabled ? `1px solid ${V.orange}40` : "1px solid transparent", color: overlayEnabled ? V.orange : V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", outline: "none" }}
         >🔦</button>
+        {!mobile && <button
+          onClick={() => setLayoutMode(m => m === "main" ? "stacked" : "main")}
+          title={layoutMode === "main" ? "Stacked layout (V)" : "Default layout (V)"}
+          style={{ background: layoutMode === "stacked" ? V.orange + "18" : "none", border: layoutMode === "stacked" ? `1px solid ${V.orange}40` : "1px solid transparent", color: layoutMode === "stacked" ? V.orange : V.textDim, cursor: "pointer", padding: "3px 8px", borderRadius: 6, fontSize: 20, fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", outline: "none" }}
+        >{layoutMode === "stacked" ? "▤" : "▥"}</button>}
         <button
           onClick={() => { setTraceData(null); setFileList([]); }}
           style={{ background: V.bgCard, border: `1px solid ${V.border}`, color: V.textDim, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: mobile ? 12 : 14, fontFamily: "inherit" }}
@@ -1433,10 +1450,10 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       )}
 
       {/* ─── Main area ─────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+      <div ref={mainAreaRef} style={{ flex: 1, display: "flex", flexDirection: layoutMode === "stacked" ? "column" : "row", overflow: "hidden", minHeight: 0 }}>
 
         {/* Preview area */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <div style={{ flex: layoutMode === "stacked" ? "none" : 1, height: layoutMode === "stacked" ? (screenshotH || "50%") : undefined, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
           {/* Screenshot preview */}
           <div
             onTouchStart={(e) => { const t = e.touches[0]; touchRef.current = { startX: t.clientX, startY: t.clientY }; }}
@@ -1477,8 +1494,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 4, display: "block" }}
                   alt="trace screenshot"
                 />
-                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport || (currentScreenshot?.width && currentScreenshot?.height ? { width: currentScreenshot.width, height: currentScreenshot.height } : traceData?.fallbackViewport)} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={false} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
-                {overlayEnabled && <PersistentCursor action={(() => { const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport || (currentScreenshot?.width && currentScreenshot?.height ? { width: currentScreenshot.width, height: currentScreenshot.height } : traceData?.fallbackViewport)} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}`} />}
+                {overlayEnabled && <ActionOverlay action={(() => { const a = selectedAction || currentAction; if (!a) return null; const start = a.startTime || 0; const end = a.endTime || start; return playhead >= start - 50 && playhead < end ? a : null; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport || (currentScreenshot?.width && currentScreenshot?.height ? { width: currentScreenshot.width, height: currentScreenshot.height } : traceData?.fallbackViewport)} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} showDebug={false} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}-${layoutMode}-${screenshotH}`} />}
+                {overlayEnabled && <PersistentCursor action={(() => { const actions = traceData?.actions || []; let best = null; for (const a of actions) { if (a.point && (a.startTime || 0) <= playhead + 50) best = a; } return best; })()} screenshot={currentScreenshot} viewport={traceData?.contextOptions?.options?.viewport || (currentScreenshot?.width && currentScreenshot?.height ? { width: currentScreenshot.width, height: currentScreenshot.height } : traceData?.fallbackViewport)} dpr={traceData?.contextOptions?.options?.deviceScaleFactor} imgEl={imgRef.current} containerEl={screenshotContainerRef.current} layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}-${layoutMode}-${screenshotH}`} />}
               </>
             ) : (
               <div style={{ textAlign: "center", color: V.border }}>
@@ -1521,9 +1538,24 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
 
         </div>
 
-        {/* ─── Side panel ─────────────────────────────────────── */}
+        {/* ─── Stacked mode: horizontal divider ─── */}
+        {layoutMode === "stacked" && showSide && (
+          <div
+            onMouseDown={(e) => { e.preventDefault(); stackedDrag.current = true; stackedDragStart.current = { y: e.clientY, h: typeof screenshotH === "number" ? screenshotH : (mainAreaRef.current?.clientHeight || 400) * 0.5 }; document.body.style.cursor = "row-resize"; }}
+            onTouchStart={(e) => { const t = e.touches[0]; stackedDrag.current = true; stackedDragStart.current = { y: t.clientY, h: typeof screenshotH === "number" ? screenshotH : (mainAreaRef.current?.clientHeight || 400) * 0.5 }; }}
+            style={{ height: 9, flexShrink: 0, cursor: "row-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
+          >
+            <div style={{ position: "absolute", top: 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
+              onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
+              onMouseLeave={(e) => e.currentTarget.style.background = V.border}
+            />
+          </div>
+        )}
+
+        {/* ─── Side panel / Stacked inspector ─────────────────────────────── */}
         {showSide ? (<>
-          {/* Resize handle with collapse chevron */}
+          {/* Resize handle with collapse chevron (main layout only) */}
+          {layoutMode === "main" && (
           <div
             onMouseDown={(e) => { if (e.target.dataset.chevron) return; e.preventDefault(); sideDrag.current = true; document.body.style.cursor = "col-resize"; }}
             onTouchStart={(e) => { if (e.target.dataset.chevron) return; sideDrag.current = true; }}
@@ -1543,7 +1575,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
               onMouseLeave={(e) => { e.currentTarget.style.color = V.textDim; e.currentTarget.style.borderColor = V.border; }}
             >▸</div>
           </div>
-          <div style={{ width: sideW, flexShrink: 0, background: V.bgPanel, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          )}
+          <div style={{ width: layoutMode === "stacked" ? undefined : sideW, flex: layoutMode === "stacked" ? 1 : undefined, flexShrink: 0, background: V.bgPanel, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <div style={{ display: "flex", borderBottom: `1px solid ${V.border}`, flexShrink: 0 }}>
             {[
               { key: "actions", label: `Actions (${filteredActions.length})`, color: V.orange },
@@ -1859,7 +1892,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           </>)}
         </div>
         </>) : (
-          /* Collapsed side panel — expand chevron */
+          /* Collapsed side panel — expand chevron (main layout only) */
+          layoutMode === "main" && (
           <div onClick={() => setShowSide(true)} style={{
             width: 20, flexShrink: 0, background: V.bgPanel, borderLeft: `1px solid ${V.border}`,
             display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
@@ -1870,6 +1904,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           >
             <span style={{ fontSize: 13, color: V.textDim }}>◂</span>
           </div>
+          )
         )}
       </div>
 
@@ -2154,6 +2189,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
                 ["T", "Toggle timeline"],
                 ["I", "Toggle inspector"],
                 ["H", "Toggle element highlight"],
+                ["V", "Toggle stacked/default layout"],
                 ["D / L", "Toggle dark / light mode"],
                 ["?", "Show this help"],
                 ["Esc", "Close this help"],
