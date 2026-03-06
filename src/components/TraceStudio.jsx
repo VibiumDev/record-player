@@ -1469,7 +1469,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       <div ref={mainAreaRef} style={{ flex: 1, display: "flex", flexDirection: layoutMode === "stacked" ? "column" : "row", overflow: "hidden", minHeight: 0 }}>
 
         {/* Preview area */}
-        <div style={{ flex: layoutMode === "stacked" ? "none" : 1, height: layoutMode === "stacked" ? (screenshotH || "50%") : undefined, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
+        <div style={{ flex: (layoutMode === "stacked" && showSide) ? "none" : 1, height: (layoutMode === "stacked" && showSide) ? (screenshotH || "50%") : undefined, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
           {/* Screenshot preview */}
           <div
             onTouchStart={(e) => { const t = e.touches[0]; touchRef.current = { startX: t.clientX, startY: t.clientY }; }}
