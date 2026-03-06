@@ -1559,9 +1559,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           <div
             onMouseDown={(e) => { if (e.target.dataset.chevron) return; e.preventDefault(); stackedDrag.current = true; stackedDragStart.current = { y: e.clientY, h: typeof screenshotH === "number" ? screenshotH : (mainAreaRef.current?.clientHeight || 400) * 0.5 }; document.body.style.cursor = "row-resize"; }}
             onTouchStart={(e) => { if (e.target.dataset.chevron) return; const t = e.touches[0]; stackedDrag.current = true; stackedDragStart.current = { y: t.clientY, h: typeof screenshotH === "number" ? screenshotH : (mainAreaRef.current?.clientHeight || 400) * 0.5 }; }}
-            style={{ height: 9, flexShrink: 0, cursor: "row-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
+            style={{ height: mobile ? 24 : 9, flexShrink: 0, cursor: "row-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
           >
-            <div style={{ position: "absolute", top: 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
+            <div style={{ position: "absolute", top: mobile ? 11 : 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
               onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
               onMouseLeave={(e) => e.currentTarget.style.background = V.border}
             />
@@ -1584,9 +1584,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           <div
             onMouseDown={(e) => { if (e.target.dataset.chevron) return; e.preventDefault(); sideDrag.current = true; document.body.style.cursor = "col-resize"; }}
             onTouchStart={(e) => { if (e.target.dataset.chevron) return; sideDrag.current = true; }}
-            style={{ width: 9, flexShrink: 0, cursor: "col-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
+            style={{ width: mobile ? 24 : 9, flexShrink: 0, cursor: "col-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
           >
-            <div style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1, background: V.border, transition: "background 0.15s" }}
+            <div style={{ position: "absolute", left: mobile ? 11 : 4, top: 0, bottom: 0, width: 1, background: V.border, transition: "background 0.15s" }}
               onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
               onMouseLeave={(e) => e.currentTarget.style.background = V.border}
             />
@@ -1874,9 +1874,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
             <div
               onMouseDown={(e) => { if (e.target.dataset.chevron || !showDetail) return; e.preventDefault(); detailDrag.current = true; detailDragStart.current = { y: e.clientY, h: detailH }; document.body.style.cursor = "row-resize"; }}
               onTouchStart={(e) => { if (e.target.dataset.chevron || !showDetail) return; const t = e.touches[0]; detailDrag.current = true; detailDragStart.current = { y: t.clientY, h: detailH }; }}
-              style={{ height: 9, flexShrink: 0, cursor: showDetail ? "row-resize" : "default", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
+              style={{ height: mobile ? 24 : 9, flexShrink: 0, cursor: showDetail ? "row-resize" : "default", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
             >
-              <div style={{ position: "absolute", top: 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
+              <div style={{ position: "absolute", top: mobile ? 11 : 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
                 onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
                 onMouseLeave={(e) => e.currentTarget.style.background = V.border}
               />
@@ -1950,9 +1950,9 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         <div
           onMouseDown={(e) => { if (e.target.dataset.chevron) return; e.preventDefault(); timelineDrag.current = true; document.body.style.cursor = "row-resize"; }}
           onTouchStart={(e) => { if (e.target.dataset.chevron) return; timelineDrag.current = true; }}
-          style={{ height: 9, flexShrink: 0, cursor: "row-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
+          style={{ height: mobile ? 24 : 9, flexShrink: 0, cursor: "row-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
         >
-          <div style={{ position: "absolute", top: 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
+          <div style={{ position: "absolute", top: mobile ? 11 : 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
             onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
             onMouseLeave={(e) => e.currentTarget.style.background = V.border}
           />
