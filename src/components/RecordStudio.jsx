@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef } from "react";
 
 /*
-  Vibium Trace — trace.vibium.dev
+  Vibium Player — player.vibium.dev
   
-  Drop a Vibium trace.zip onto this viewer.
+  Drop a Vibium record.zip onto this viewer.
   It uses JSZip to unzip, then parses the NDJSON event
   files and extracts screenshots from resources.
 */
@@ -440,7 +440,7 @@ function isHumanAction(apiName) {
 // ─── Main component ─────────────────────────────────────────────────────────
 function getPanelDefault(key, fallback) {
   try {
-    const v = localStorage.getItem(`trace-panel-${key}`);
+    const v = localStorage.getItem(`record-panel-${key}`);
     if (v === "true") return true;
     if (v === "false") return false;
     return fallback;
@@ -786,7 +786,7 @@ const ActionOverlay = forwardRef(function ActionOverlay({ action, screenshot, vi
   );
 });
 
-const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
+const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1049,7 +1049,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       setPlayhead(urlParams.at != null ? Math.max(0, Math.min(urlParams.at, duration)) : 0);
 
       // First-time visitors: open all panels after trace loads
-      const hasStoredPrefs = ["inspector","timeline","controls"].some(k => localStorage.getItem(`trace-panel-${k}`) !== null);
+      const hasStoredPrefs = ["inspector","timeline","controls"].some(k => localStorage.getItem(`record-panel-${k}`) !== null);
       if (!hasStoredPrefs) {
         const isMobile = window.innerWidth < 768;
         const isCompact = window.innerHeight < 500;
@@ -1066,10 +1066,10 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   }, []);
 
   // ─── Persist panel state ────────────────────────────────────────────────
-  useEffect(() => { try { localStorage.setItem("trace-panel-inspector", showSide); } catch {} }, [showSide]);
-  useEffect(() => { try { localStorage.setItem("trace-panel-timeline", showTimeline); } catch {} }, [showTimeline]);
-  useEffect(() => { try { localStorage.setItem("trace-panel-controls", showToolbar); } catch {} }, [showToolbar]);
-  useEffect(() => { try { localStorage.setItem("trace-panel-layout", layoutMode); } catch {} }, [layoutMode]);
+  useEffect(() => { try { localStorage.setItem("record-panel-inspector", showSide); } catch {} }, [showSide]);
+  useEffect(() => { try { localStorage.setItem("record-panel-timeline", showTimeline); } catch {} }, [showTimeline]);
+  useEffect(() => { try { localStorage.setItem("record-panel-controls", showToolbar); } catch {} }, [showToolbar]);
+  useEffect(() => { try { localStorage.setItem("record-panel-layout", layoutMode); } catch {} }, [layoutMode]);
 
   // ─── Drag and drop ──────────────────────────────────────────────────────
   const handleDrop = useCallback((e) => {
@@ -1089,7 +1089,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   // ─── Auto-load trace from URL param ─────────────────────────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const traceUrl = params.get("trace");
+    const traceUrl = params.get("record");
     if (traceUrl) {
       const url = traceUrl.startsWith("http") ? traceUrl : `/${traceUrl}`;
       fetch(url)
@@ -1308,10 +1308,10 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src={VIBIUM_LOGO_HI} alt="V" style={{ width: 48, height: 62 }} />
-          <span style={{ fontSize: 24, fontWeight: 700, color: V.orange }}>Vibium Trace</span>
+          <span style={{ fontSize: 24, fontWeight: 700, color: V.orange }}>Vibium Player</span>
         </div>
-        <div style={{ fontSize: 14, color: V.textDim, marginTop: -4 }}>trace.vibium.dev</div>
-        <div style={{ color: V.textDim, fontSize: 17 }}>Drop a Vibium <code style={{ background: V.bgCard, padding: "2px 6px", borderRadius: 4, color: V.amber }}>trace.zip</code> here</div>
+        <div style={{ fontSize: 14, color: V.textDim, marginTop: -4 }}>player.vibium.dev</div>
+        <div style={{ color: V.textDim, fontSize: 17 }}>Drop a Vibium <code style={{ background: V.bgCard, padding: "2px 6px", borderRadius: 4, color: V.amber }}>record.zip</code> here</div>
 
         <div style={{
           width: 320, height: 160, border: `2px dashed ${V.border}`, borderRadius: 12,
@@ -1327,7 +1327,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         </div>
 
         <div style={{ color: V.textDim, fontSize: 14, marginTop: 4 }}>
-          Or <a href="/?trace=vibium-demo-trace.zip" style={{ color: V.orange, textDecoration: "none" }}>view a sample trace</a>
+          Or <a href="/?record=vibium-demo-record.zip" style={{ color: V.orange, textDecoration: "none" }}>play a sample recording</a>
         </div>
 
         {loading && <div style={{ color: V.orange, fontSize: 16 }}>Loading trace...</div>}
@@ -1394,7 +1394,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
       {/* ─── Top bar ───────────────────────────────────────────── */}
       {showToolbar ? (<div style={{ height: mobile ? 52 : 66, background: V.bgCard, borderBottom: `1px solid ${V.border}`, display: "flex", alignItems: "center", padding: mobile ? "0 8px" : "0 14px", gap: mobile ? 6 : 12, flexShrink: 0, position: "relative" }}>
         <img src={VIBIUM_LOGO} alt="V" style={{ width: 22, height: 28, borderRadius: 4 }} />
-        {!mobile && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Trace</span>}
+        {!mobile && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Player</span>}
         <div style={{ flex: 1 }} />
 
         <div style={{ display: "flex", alignItems: "center", gap: 2, background: V.bgPanel, border: `1px solid ${V.border}`, borderRadius: 10, padding: "2px 4px" }}>
@@ -1434,7 +1434,7 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
         <button
           onClick={() => { setTraceData(null); setFileList([]); }}
           style={{ background: V.bgCard, border: `1px solid ${V.border}`, color: V.textDim, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: mobile ? 12 : 14, fontFamily: "inherit" }}
-        >{mobile ? "✕" : "New trace"}</button>
+        >{mobile ? "⏏" : "⏏ Eject"}</button>
         {!mobile && <button
           onClick={() => setDark(!dark)}
           style={{ background: V.bgPanel, border: `1px solid ${V.border}`, color: V.textMid, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 14, fontFamily: "inherit" }}
@@ -2266,4 +2266,4 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   );
 });
 
-export default TraceStudio;
+export default RecordStudio;
