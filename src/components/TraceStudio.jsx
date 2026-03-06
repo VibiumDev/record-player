@@ -851,10 +851,10 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
   const screenshotContainerRef = useRef(null);
   const [imgDims, setImgDims] = useState({ w: 0, h: 0 });
 
-  // On mobile/compact, collapse panels
+  // On mobile/compact, collapse panels (but keep inspector visible in stacked mode)
   useEffect(() => {
-    if (mobile || compact) { setShowSide(false); setShowTimeline(false); setShowDetail(false); }
-  }, [mobile, compact]);
+    if (mobile || compact) { setShowTimeline(false); setShowDetail(false); if (layoutMode !== "stacked") setShowSide(false); }
+  }, [mobile, compact, layoutMode]);
 
   // Auto-switch to stacked layout on narrow/portrait screens
   useEffect(() => {
@@ -1554,17 +1554,26 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
 
         </div>
 
-        {/* ─── Stacked mode: horizontal divider ─── */}
+        {/* ─── Stacked mode: horizontal divider with collapse chevron ─── */}
         {layoutMode === "stacked" && showSide && (
           <div
-            onMouseDown={(e) => { e.preventDefault(); stackedDrag.current = true; stackedDragStart.current = { y: e.clientY, h: typeof screenshotH === "number" ? screenshotH : (mainAreaRef.current?.clientHeight || 400) * 0.5 }; document.body.style.cursor = "row-resize"; }}
-            onTouchStart={(e) => { const t = e.touches[0]; stackedDrag.current = true; stackedDragStart.current = { y: t.clientY, h: typeof screenshotH === "number" ? screenshotH : (mainAreaRef.current?.clientHeight || 400) * 0.5 }; }}
+            onMouseDown={(e) => { if (e.target.dataset.chevron) return; e.preventDefault(); stackedDrag.current = true; stackedDragStart.current = { y: e.clientY, h: typeof screenshotH === "number" ? screenshotH : (mainAreaRef.current?.clientHeight || 400) * 0.5 }; document.body.style.cursor = "row-resize"; }}
+            onTouchStart={(e) => { if (e.target.dataset.chevron) return; const t = e.touches[0]; stackedDrag.current = true; stackedDragStart.current = { y: t.clientY, h: typeof screenshotH === "number" ? screenshotH : (mainAreaRef.current?.clientHeight || 400) * 0.5 }; }}
             style={{ height: 9, flexShrink: 0, cursor: "row-resize", background: "transparent", position: "relative", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
           >
             <div style={{ position: "absolute", top: 4, left: 0, right: 0, height: 1, background: V.border, transition: "background 0.15s" }}
               onMouseEnter={(e) => e.currentTarget.style.background = V.orange}
               onMouseLeave={(e) => e.currentTarget.style.background = V.border}
             />
+            <div data-chevron="1" onClick={() => setShowSide(false)} style={{
+              position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              width: 28, height: 16, borderRadius: 4, background: V.bgCard, border: `1px solid ${V.border}`,
+              display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+              fontSize: 13, color: V.textDim, zIndex: 21, transition: "color 0.15s, border-color 0.15s",
+            }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = V.orange; e.currentTarget.style.borderColor = V.orange; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = V.textDim; e.currentTarget.style.borderColor = V.border; }}
+            >▾</div>
           </div>
         )}
 
@@ -1908,8 +1917,8 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
           </>)}
         </div>
         </>) : (
-          /* Collapsed side panel — expand chevron (main layout only) */
-          layoutMode === "main" && (
+          /* Collapsed side panel — expand chevron */
+          layoutMode === "main" ? (
           <div onClick={() => setShowSide(true)} style={{
             width: 20, flexShrink: 0, background: V.bgPanel, borderLeft: `1px solid ${V.border}`,
             display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
@@ -1919,6 +1928,17 @@ const TraceStudio = forwardRef(function TraceStudio(_props, _ref) {
             onMouseLeave={(e) => e.currentTarget.style.background = V.bgPanel}
           >
             <span style={{ fontSize: 13, color: V.textDim }}>◂</span>
+          </div>
+          ) : layoutMode === "stacked" && (
+          <div onClick={() => setShowSide(true)} style={{
+            height: 20, flexShrink: 0, background: V.bgPanel, borderTop: `1px solid ${V.border}`,
+            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+            transition: "background 0.15s",
+          }}
+            onMouseEnter={(e) => e.currentTarget.style.background = V.bgCard}
+            onMouseLeave={(e) => e.currentTarget.style.background = V.bgPanel}
+          >
+            <span style={{ fontSize: 13, color: V.textDim }}>▾</span>
           </div>
           )
         )}
