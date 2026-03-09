@@ -985,16 +985,32 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
   const [logoSpinning, setLogoSpinning] = useState(false);
   const [logoHovering, setLogoHovering] = useState(false);
   const logoAudioRef = useRef(null);
-  if (!logoAudioRef.current) {
-    logoAudioRef.current = new Audio("/vibium-valentine.mp3");
-    logoAudioRef.current.loop = true;
-  }
+  const logoAudioUnlocked = useRef(false);
+
+  const ensureLogoAudio = useCallback(() => {
+    if (!logoAudioRef.current) {
+      logoAudioRef.current = new Audio("/vibium-valentine.mp3");
+      logoAudioRef.current.loop = true;
+    }
+    // Unlock on first user gesture by doing a synchronous play+pause
+    if (!logoAudioUnlocked.current) {
+      logoAudioUnlocked.current = true;
+      const a = logoAudioRef.current;
+      a.play().then(() => {
+        // Audio is now unlocked; actual play/pause handled below
+      }).catch(() => {});
+    }
+    return logoAudioRef.current;
+  }, []);
+
   const logoActive = logoSpinning || logoHovering;
   useEffect(() => {
+    const a = logoAudioRef.current;
+    if (!a) return;
     if (logoActive) {
-      logoAudioRef.current.play().catch(() => {});
+      a.play().catch(() => {});
     } else {
-      logoAudioRef.current.pause();
+      a.pause();
     }
   }, [logoActive]);
   useEffect(() => {
