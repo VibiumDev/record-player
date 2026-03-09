@@ -1846,9 +1846,9 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
           }}
         >
           <div
-            onClick={() => { ensureLogoAudio(); setLogoSpinning((s) => !s); }}
-            onMouseEnter={() => { ensureLogoAudio(); setLogoHovering(true); }}
-            onMouseLeave={() => setLogoHovering(false)}
+            onClick={() => { const next = !logoSpinning; setLogoSpinning(next); if (next || logoHovering) logoPlayAudio(); else logoPauseAudio(); }}
+            onMouseEnter={() => { setLogoHovering(true); logoPlayAudio(); }}
+            onMouseLeave={() => { setLogoHovering(false); if (!logoSpinning) logoPauseAudio(); }}
             style={{
               width: 28,
               height: 28,
