@@ -1835,22 +1835,33 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
             position: "relative",
           }}
         >
-          <img
-            src={VIBIUM_LOGO}
-            alt="V"
+          <div
             onClick={() => setLogoSpinning((s) => !s)}
             onMouseEnter={() => setLogoHovering(true)}
             onMouseLeave={() => setLogoHovering(false)}
             style={{
-              width: 22,
+              width: 28,
               height: 28,
               borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               cursor: "pointer",
-              animation: logoActive ? "spin-record 3s linear infinite" : "none",
               transition: "box-shadow 0.3s ease-out",
               boxShadow: logoSpinning ? `0 0 0 2px ${V.orange}44, 0 0 12px 3px ${V.orange}66` : "none",
             }}
-          />
+          >
+            <img
+              src={VIBIUM_LOGO}
+              alt="V"
+              style={{
+                width: 22,
+                height: 28,
+                animation: logoActive ? "spin-record 3s linear infinite" : "none",
+                transformOrigin: "50% 50%",
+              }}
+            />
+          </div>
           {!mobile && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Player</span>}
           <div style={{ flex: 1 }} />
 
