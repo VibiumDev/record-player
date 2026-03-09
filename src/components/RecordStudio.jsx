@@ -1853,8 +1853,8 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
           }}
         >
           <div
-            onClick={() => setLogoSpinning((s) => !s)}
-            onMouseEnter={() => setLogoHovering(true)}
+            onClick={() => { ensureLogoAudio(); setLogoSpinning((s) => !s); }}
+            onMouseEnter={() => { ensureLogoAudio(); setLogoHovering(true); }}
             onMouseLeave={() => setLogoHovering(false)}
             style={{
               width: 28,
