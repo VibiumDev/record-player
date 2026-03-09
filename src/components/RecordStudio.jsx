@@ -1596,8 +1596,8 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div
-            onClick={() => setLogoSpinning((s) => !s)}
-            onMouseEnter={() => setLogoHovering(true)}
+            onClick={() => { ensureLogoAudio(); setLogoSpinning((s) => !s); }}
+            onMouseEnter={() => { ensureLogoAudio(); setLogoHovering(true); }}
             onMouseLeave={() => setLogoHovering(false)}
             style={{
               width: 48,
