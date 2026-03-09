@@ -985,34 +985,27 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
   const [logoSpinning, setLogoSpinning] = useState(false);
   const [logoHovering, setLogoHovering] = useState(false);
   const logoAudioRef = useRef(null);
-  const logoAudioUnlocked = useRef(false);
 
-  const ensureLogoAudio = useCallback(() => {
+  const getLogoAudio = useCallback(() => {
     if (!logoAudioRef.current) {
       logoAudioRef.current = new Audio("/vibium-valentine.mp3");
       logoAudioRef.current.loop = true;
     }
-    // Unlock on first user gesture by doing a synchronous play+pause
-    if (!logoAudioUnlocked.current) {
-      logoAudioUnlocked.current = true;
-      const a = logoAudioRef.current;
-      a.play().then(() => {
-        // Audio is now unlocked; actual play/pause handled below
-      }).catch(() => {});
-    }
     return logoAudioRef.current;
   }, []);
 
-  const logoActive = logoSpinning || logoHovering;
-  useEffect(() => {
+  // Play/pause audio synchronously from gesture handlers
+  const logoPlayAudio = useCallback(() => {
+    const a = getLogoAudio();
+    a.play().catch(() => {});
+  }, [getLogoAudio]);
+
+  const logoPauseAudio = useCallback(() => {
     const a = logoAudioRef.current;
-    if (!a) return;
-    if (logoActive) {
-      a.play().catch(() => {});
-    } else {
-      a.pause();
-    }
-  }, [logoActive]);
+    if (a) a.pause();
+  }, []);
+
+  const logoActive = logoSpinning || logoHovering;
   useEffect(() => {
     const mqW = window.matchMedia("(max-width: 767px)");
     const mqH = window.matchMedia("(max-height: 499px)");
