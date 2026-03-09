@@ -1821,15 +1821,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
           <img
             src={VIBIUM_LOGO}
             alt="V"
-            onClick={() => {
-              if (mobile) setLogoSpinning((s) => !s);
-            }}
-            onMouseEnter={() => {
-              if (!mobile) setLogoSpinning(true);
-            }}
-            onMouseLeave={() => {
-              if (!mobile) setLogoSpinning(false);
-            }}
+            onClick={() => setLogoSpinning((s) => !s)}
             style={{
               width: 22,
               height: 28,
