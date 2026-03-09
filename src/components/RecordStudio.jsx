@@ -1601,7 +1601,8 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
               style={{
                 width: 48,
                 height: 62,
-                animation: logoActive ? "spin-record 3s linear infinite" : "none",
+                animation: "spin-record 3s linear infinite",
+                animationPlayState: logoActive ? "running" : "paused",
                 transformOrigin: "50% 50%",
               }}
             />
@@ -1857,7 +1858,8 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
               style={{
                 width: 22,
                 height: 28,
-                animation: logoActive ? "spin-record 3s linear infinite" : "none",
+                animation: "spin-record 3s linear infinite",
+                animationPlayState: logoActive ? "running" : "paused",
                 transformOrigin: "50% 50%",
               }}
             />
