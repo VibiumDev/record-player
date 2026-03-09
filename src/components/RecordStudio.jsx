@@ -1583,11 +1583,13 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
             src={VIBIUM_LOGO_HI}
             alt="V"
             onClick={() => setLogoSpinning((s) => !s)}
+            onMouseEnter={() => setLogoHovering(true)}
+            onMouseLeave={() => setLogoHovering(false)}
             style={{
               width: 48,
               height: 62,
-              cursor: mobile ? "pointer" : "default",
-              animation: logoSpinning ? "spin-record 3s linear infinite" : "none",
+              cursor: "pointer",
+              animation: logoActive ? "spin-record 3s linear infinite" : "none",
               transition: "transform 0.3s ease-out",
             }}
           />
