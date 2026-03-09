@@ -1833,9 +1833,11 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
             style={{
               width: 22,
               height: 28,
-              borderRadius: 4,
+              borderRadius: "50%",
               cursor: "pointer",
               animation: logoActive ? "spin-record 3s linear infinite" : "none",
+              transition: "box-shadow 0.3s ease-out",
+              boxShadow: logoSpinning ? `0 0 0 2px ${V.orange}44, 0 0 12px 3px ${V.orange}66` : "none",
             }}
           />
           {!mobile && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Player</span>}
