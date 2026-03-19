@@ -1209,13 +1209,13 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
           ...a,
           startTime: normalize(a.startTime),
           endTime: normalize(a.endTime || a.startTime),
-          duration: (a.endTime || a.startTime || 0) - (a.startTime || 0),
+          duration: Math.round((a.endTime || a.startTime || 0) - (a.startTime || 0)),
         })),
         network: network.map((n) => ({
           ...n,
           startTime: normalize(n.startTime),
           endTime: normalize(n.endTime || n.startTime),
-          duration: (n.endTime || n.startTime || 0) - (n.startTime || 0),
+          duration: Math.round((n.endTime || n.startTime || 0) - (n.startTime || 0)),
         })),
         console: consoleEvents.map((c) => ({ ...c, time: normalize(c.time) })),
         screenshots: resolvedScreenshots
