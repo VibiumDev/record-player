@@ -23,8 +23,8 @@ Visit **[player.vibium.dev](https://player.vibium.dev)** and drop a Vibium `reco
 ### Run locally
 
 ```sh
-git clone https://github.com/nicholasgriffintn/vibium-player.git
-cd vibium-player
+git clone https://github.com/VibiumDev/record-player.git
+cd record-player
 npm i
 npm run dev
 ```
