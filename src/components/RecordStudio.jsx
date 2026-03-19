@@ -131,7 +131,7 @@ function processTraceEvents(events) {
     const apiName = evt.title || (evt.class && evt.method ? `${evt.class}.${evt.method}` : "");
 
     // Groups: class=Tracing, method=group — before/after pairs
-    if (type === "before" && evt.class === "Tracing" && evt.method === "group") {
+    if (type === "before" && evt.class === "Tracing" && (evt.method === "group" || evt.method === "tracingGroup")) {
       actionMap.set(evt.callId, {
         _isGroup: true,
         title: evt.title || evt.params?.name || "Group",
@@ -278,8 +278,8 @@ function processNetworkEvents(events) {
       results.push({
         url: req.url || "",
         method: req.method || "GET",
-        startTime: (snap._monotonicTime || 0) * 1000, // seconds → ms
-        endTime: (snap._monotonicTime || 0) * 1000 + (snap.time || 0),
+        startTime: snap._monotonicTime || 0,
+        endTime: (snap._monotonicTime || 0) + (snap.time || 0),
         status: resp.status || 0,
         statusText: resp.statusText || "",
         mimeType: resp.content?.mimeType || "",
@@ -1169,14 +1169,15 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
         }
       }
 
-      // Load resources/ as data URIs (sha1 hashes, no file extension)
+      // Load resources/ as data URIs
       const screenshots = new Map();
       for (const fname of files) {
         if (fname.startsWith("resources/") && !zip.files[fname].dir) {
           try {
             const base64 = await zip.files[fname].async("base64");
             const sha1 = fname.split("/").pop();
-            screenshots.set(sha1, `data:image/png;base64,${base64}`);
+            const mime = sha1.endsWith(".png") ? "image/png" : "image/jpeg";
+            screenshots.set(sha1, `data:${mime};base64,${base64}`);
           } catch {}
         }
       }
