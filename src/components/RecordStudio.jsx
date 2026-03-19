@@ -332,8 +332,8 @@ function processNetworkEvents(events) {
 
 // ─── Format time helper ─────────────────────────────────────────────────────
 function fmt(ms) {
-  if (!ms && ms !== 0) return "--";
-  const s = Math.floor(ms / 1000);
+   if (ms == null || isNaN(ms) || ms < 0) return "0:00.00";
+   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   const sec = s % 60;
   const frac = Math.floor((ms % 1000) / 10);
