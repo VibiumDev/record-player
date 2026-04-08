@@ -44,6 +44,7 @@ export default function CompareStudio() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [playhead, setPlayhead] = useState(0);
   const [duration, setDuration] = useState(0);
 
