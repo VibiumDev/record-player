@@ -456,6 +456,7 @@ export default function CompareStudio() {
             label="Expected"
             hideGlobalChrome
             hideControls
+            overlayEnabledProp={overlayEnabled}
           />
         </div>
         <div style={{ flex: 1, overflow: "hidden" }}>
@@ -466,6 +467,7 @@ export default function CompareStudio() {
             label="Actual"
             hideGlobalChrome
             hideControls
+            overlayEnabledProp={overlayEnabled}
           />
         </div>
       </div>
