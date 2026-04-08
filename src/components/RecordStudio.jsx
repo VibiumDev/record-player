@@ -932,7 +932,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
-const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, compact: compactProp, ...restProps } = {}, _ref) {
+const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, compact: compactProp, ...restProps } = {}, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
