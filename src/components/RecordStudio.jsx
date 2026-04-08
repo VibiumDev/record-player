@@ -932,7 +932,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
-const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, compact: compactProp, ...restProps } = {}, _ref) {
+const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, overlayEnabledProp, compact: compactProp, ...restProps } = {}, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -949,7 +949,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const [hoveredThumb, setHoveredThumb] = useState(null);
   const [fileList, setFileList] = useState([]);
   const [dark, setDark] = useState(true);
-  const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [overlayEnabledLocal, setOverlayEnabledLocal] = useState(true);
+  const overlayEnabled = overlayEnabledProp != null ? overlayEnabledProp : overlayEnabledLocal;
+  const setOverlayEnabled = setOverlayEnabledLocal;
   const [sideW, setSideW] = useState(360);
   const [showSide, setShowSide] = useState(urlParams.inspector ?? getPanelDefault("inspector", false));
   const [timelineH, setTimelineH] = useState(212);

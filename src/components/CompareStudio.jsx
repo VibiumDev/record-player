@@ -44,6 +44,7 @@ export default function CompareStudio() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [playhead, setPlayhead] = useState(0);
   const [duration, setDuration] = useState(0);
 
@@ -327,7 +328,25 @@ export default function CompareStudio() {
               outline: "none",
             }}
           >
-            ⟲
+        ⟲
+          </button>
+          <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
+          <button
+            onClick={() => setOverlayEnabled((v) => !v)}
+            title={overlayEnabled ? "Disable highlight" : "Enable highlight"}
+            style={{
+              background: overlayEnabled ? V.orange + "18" : "none",
+              border: overlayEnabled ? `1px solid ${V.orange}40` : "1px solid transparent",
+              color: overlayEnabled ? V.orange : V.textDim,
+              cursor: "pointer",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 20,
+              fontWeight: 700,
+              outline: "none",
+            }}
+          >
+            🔦
           </button>
         </div>
 
@@ -437,6 +456,7 @@ export default function CompareStudio() {
             label="Expected"
             hideGlobalChrome
             hideControls
+            overlayEnabledProp={overlayEnabled}
           />
         </div>
         <div style={{ flex: 1, overflow: "hidden" }}>
@@ -447,6 +467,7 @@ export default function CompareStudio() {
             label="Actual"
             hideGlobalChrome
             hideControls
+            overlayEnabledProp={overlayEnabled}
           />
         </div>
       </div>
