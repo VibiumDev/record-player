@@ -988,8 +988,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     setLoop: (l) => setLoop(l),
     goToStart: () => { setPlayhead(0); setIsPlaying(false); },
     goToEnd: () => { if (traceData) { setPlayhead(traceData.duration); setIsPlaying(false); } },
-    getState: () => ({ playhead, isPlaying, speed, loop, duration: traceData?.duration || 0 }),
-  }), [playhead, isPlaying, speed, loop, traceData]);
+    setHighlight: (bool) => setOverlayEnabled(bool),
+    getState: () => ({ playhead, isPlaying, speed, loop, highlight: overlayEnabled, duration: traceData?.duration || 0 }),
+  }), [playhead, isPlaying, speed, loop, overlayEnabled, traceData]);
 
 
   // Detect if footer has room for stats
