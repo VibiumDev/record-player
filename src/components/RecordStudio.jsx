@@ -1855,7 +1855,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       onDragOver={handleDragOver}
       style={{
         width: "100%",
-        height: "100vh",
+        height: hideGlobalChrome ? "100%" : "100vh",
         background: V.bg,
         color: V.text,
         fontFamily: "'SF Mono', 'Fira Code', monospace",
