@@ -1,41 +1,74 @@
 
-Root cause I found: the landing-page logo references `animation: "spin-record 3s linear infinite"`, but the `@keyframes spin-record` CSS is only injected inside the **loaded-record UI branch** (`traceData` path).  
-So when you’re on true landing (`!traceData`), the animation name exists but keyframes do not, so hover/tap does nothing.
+# Side-by-Side Comparison Mode
 
-Implementation plan:
-1. Make `spin-record` keyframes globally available
-   - Move the keyframes to a shared/global place (best: `src/index.css`, or a top-level style block rendered regardless of `traceData`).
-   - Keep the same animation name (`spin-record`) so existing inline styles continue to work.
+## Overview
 
-2. Keep one consistent interaction model for both logos
-   - Ensure both landing logo (`VIBIUM_LOGO_HI`) and toolbar logo (`VIBIUM_LOGO`) use identical handlers:
-     - Desktop: start on `onMouseEnter`, stop on `onMouseLeave`
-     - Mobile: toggle on `onClick`
-   - Reuse the same `logoSpinning` state (already present).
+Add a "Compare" mode to Vibium Player where two zip files are loaded side-by-side: a **golden image** (expected) and a **test recording** (actual). Each side renders as an independent stacked-layout player, enabling quick visual comparison of where things diverged.
 
-3. Improve visual reliability
-   - Add `transformOrigin: "50% 50%"` and optionally `willChange: "transform"` to both logo styles for smoother, obvious spin.
-   - Keep rotation speed at `3s linear infinite` unless you want slower/faster.
+## Architecture
 
-4. Verify true landing route behavior
-   - Confirm landing route has no `record` query param (because `?record=...` bypasses landing entirely).
-   - Validate that animation now works on:
-     - landing logo (no trace loaded)
-     - toolbar logo (trace loaded)
-
-Technical details to apply:
-- Current affected file: `src/components/RecordStudio.jsx`
-- Recommended global style target: `src/index.css`
-- Key snippet to centralize:
-```css
-@keyframes spin-record {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
+```text
+┌─────────────────────────────────────────────────┐
+│  CompareStudio (new wrapper)                    │
+│ ┌──────────────────┐  ┌──────────────────┐      │
+│ │  RecordStudio     │  │  RecordStudio     │     │
+│ │  (golden/left)    │  │  (actual/right)   │     │
+│ │  stacked layout   │  │  stacked layout   │     │
+│ │  forced           │  │  forced           │     │
+│ └──────────────────┘  └──────────────────┘      │
+│  ── shared toolbar: sync playback, labels ──    │
+└─────────────────────────────────────────────────┘
 ```
 
-Validation checklist:
-- Desktop landing: hover logo starts spin, leaving logo stops spin.
-- Mobile landing: first tap starts spin, second tap stops spin.
-- Loaded-record UI still behaves the same.
-- No console CSS errors and no regressions in other animations.
+## Key Changes
+
+### 1. Make RecordStudio accept props (refactor)
+
+Currently `RecordStudio` is self-contained — it manages its own file loading, landing page, and layout. To reuse it in compare mode, add optional props:
+
+- `initialFile` — a `Blob`/`File` to auto-load (skip landing page)
+- `forceLayout` — lock to `"stacked"` layout
+- `label` — display a label like "Expected" or "Actual" in the toolbar
+- `hideGlobalChrome` — suppress the landing page, help overlay, and footer when embedded
+- `compact` — hint to reduce padding/chrome
+
+This is a props-passthrough approach — minimal changes to the existing component.
+
+### 2. New `CompareStudio` component
+
+A new top-level component that:
+
+- Shows a **compare landing page** with two drop zones (left: "Golden / Expected", right: "Actual / Test")
+- Once both files are loaded, renders two `RecordStudio` instances side-by-side, each forced into stacked layout
+- Provides a shared header bar with labels ("Expected" | "Actual") and a button to reset/reload files
+- Optional: a "sync playback" toggle that links the two players' playheads
+
+### 3. Routing / Entry point
+
+- Add a `/compare` route in `App.tsx` that renders `CompareStudio`
+- Add a "Compare" link on the main landing page
+- Support URL params: `?left=url1&right=url2` for direct-link comparison
+
+### 4. Landing page update
+
+Add a small "Compare two recordings" link/button on the existing landing page, linking to `/compare`.
+
+## Technical Notes
+
+- RecordStudio is ~4000 lines. The refactor keeps changes minimal — just threading a few optional props through, not a major restructure.
+- Each player instance maintains independent state (playhead, zoom, panels). Sync is opt-in.
+- The stacked layout is already implemented; forcing it just means setting `layoutMode="stacked"` and hiding the toggle.
+- Each side gets roughly 50% viewport width; the stacked layout works well in narrow containers.
+
+## Files to Create/Modify
+
+| File | Change |
+|------|--------|
+| `src/components/RecordStudio.jsx` | Add optional props: `initialFile`, `forceLayout`, `label`, `hideGlobalChrome`. Wire them into existing logic. |
+| `src/components/CompareStudio.jsx` | New component: dual drop zones, side-by-side RecordStudio rendering |
+| `src/pages/Compare.tsx` | New page wrapper |
+| `src/App.tsx` | Add `/compare` route |
+
+## Scope
+
+This plan focuses on the core side-by-side viewer. Synced playback (linking both timelines) can be added as a follow-up.
