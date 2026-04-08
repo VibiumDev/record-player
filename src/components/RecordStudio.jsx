@@ -1035,10 +1035,12 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
   // Auto-switch to stacked layout on narrow/portrait screens
   useEffect(() => {
+    if (forceLayout) { setLayoutMode(forceLayout); return; }
     if (mobile) setLayoutMode("stacked");
-  }, [mobile]);
+  }, [mobile, forceLayout]);
 
   useEffect(() => {
+    if (forceLayout) return; // skip auto-switch when layout is forced
     const check = () => {
       const portrait = window.innerHeight > window.innerWidth;
       const narrow = window.innerWidth < 900;
@@ -1047,7 +1049,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
-  }, []);
+  }, [forceLayout]);
 
   // Merge brand + surface colors for current theme
   const V = useMemo(() => ({ ...brand, ...(dark ? darkSurface : lightSurface) }), [dark]);
