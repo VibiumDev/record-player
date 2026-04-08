@@ -1883,7 +1883,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       <style>{`.hide-scrollbar::-webkit-scrollbar{display:none}.hide-scrollbar{scrollbar-width:none}@keyframes spin-record{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
       {/* ─── Top bar ───────────────────────────────────────────── */}
-      {showToolbar ? (
+      {showToolbar && !hideControls ? (
         <div
           style={{
             height: mobile ? 52 : 66,
