@@ -52,6 +52,7 @@ export default function CompareStudio() {
   const pollRef = useRef(null);
 
   const V = useMemo(() => ({ ...brand, ...(dark ? darkSurface : lightSurface) }), [dark]);
+  const syncSource = useRef(null); // "left" | "right" | null — prevents echo loops
 
   const bothLoaded = leftFile && rightFile;
 
