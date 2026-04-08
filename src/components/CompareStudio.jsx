@@ -327,7 +327,25 @@ export default function CompareStudio() {
               outline: "none",
             }}
           >
-            ⟲
+        ⟲
+          </button>
+          <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
+          <button
+            onClick={() => setOverlayEnabled((v) => !v)}
+            title={overlayEnabled ? "Disable highlight" : "Enable highlight"}
+            style={{
+              background: overlayEnabled ? V.orange + "18" : "none",
+              border: overlayEnabled ? `1px solid ${V.orange}40` : "1px solid transparent",
+              color: overlayEnabled ? V.orange : V.textDim,
+              cursor: "pointer",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 20,
+              fontWeight: 700,
+              outline: "none",
+            }}
+          >
+            🔦
           </button>
         </div>
 
