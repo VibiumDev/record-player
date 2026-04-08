@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback, forwardRef } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 
 /*
   Vibium Player — player.vibium.dev
@@ -932,7 +932,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
-const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, compact: compactProp, ...restProps } = {}, _ref) {
+const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, compact: compactProp, ...restProps } = {}, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -967,6 +967,20 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const filmstripRef = useRef(null);
   const footerRef = useRef(null);
   const [footerNarrow, setFooterNarrow] = useState(false);
+
+  // Expose imperative API for parent (CompareStudio shared controls)
+  useImperativeHandle(_ref, () => ({
+    play: () => setIsPlaying(true),
+    pause: () => setIsPlaying(false),
+    togglePlay: () => setIsPlaying((p) => !p),
+    setPlayhead: (t) => setPlayhead(t),
+    setSpeed: (s) => setSpeed(s),
+    setLoop: (l) => setLoop(l),
+    goToStart: () => { setPlayhead(0); setIsPlaying(false); },
+    goToEnd: () => { if (traceData) { setPlayhead(traceData.duration); setIsPlaying(false); } },
+    getState: () => ({ playhead, isPlaying, speed, loop, duration: traceData?.duration || 0 }),
+  }), [playhead, isPlaying, speed, loop, traceData]);
+
 
   // Detect if footer has room for stats
   useEffect(() => {
@@ -1869,7 +1883,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       <style>{`.hide-scrollbar::-webkit-scrollbar{display:none}.hide-scrollbar{scrollbar-width:none}@keyframes spin-record{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
       {/* ─── Top bar ───────────────────────────────────────────── */}
-      {showToolbar ? (
+      {showToolbar && !hideControls ? (
         <div
           style={{
             height: mobile ? 52 : 66,
@@ -2212,7 +2226,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             <span style={{ fontSize: 13, color: V.textDim }}>▴</span>
           </div>
         </div>
-      ) : (
+      ) : !hideControls ? (
         /* Collapsed toolbar — expand chevron */
         <div
           onClick={() => setShowToolbar(true)}
@@ -2232,7 +2246,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         >
           <span style={{ fontSize: 13, color: V.textDim }}>▾</span>
         </div>
-      )}
+      ) : null}
 
       {/* ─── Main area ─────────────────────────────────────────── */}
       <div

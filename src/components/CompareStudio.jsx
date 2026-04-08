@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import RecordStudio from "./RecordStudio";
 
 const brand = {
@@ -26,14 +26,72 @@ const lightSurface = {
   textDim: "#888",
 };
 
+function fmt(ms) {
+  if (ms == null || isNaN(ms) || ms < 0) return "0:00.00";
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  const frac = Math.floor((ms % 1000) / 10);
+  return `${m}:${String(sec).padStart(2, "0")}.${String(frac).padStart(2, "0")}`;
+}
+
 export default function CompareStudio() {
   const [dark, setDark] = useState(true);
   const [leftFile, setLeftFile] = useState(null);
   const [rightFile, setRightFile] = useState(null);
 
+  // Shared playback state (driven from refs)
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [loop, setLoop] = useState(false);
+  const [playhead, setPlayhead] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const leftRef = useRef(null);
+  const rightRef = useRef(null);
+  const pollRef = useRef(null);
+
   const V = useMemo(() => ({ ...brand, ...(dark ? darkSurface : lightSurface) }), [dark]);
 
   const bothLoaded = leftFile && rightFile;
+
+  // Poll playhead from left player to keep shared display in sync
+  useEffect(() => {
+    if (!bothLoaded) return;
+    const poll = () => {
+      const ls = leftRef.current?.getState?.();
+      if (ls) {
+        setPlayhead(ls.playhead);
+        setIsPlaying(ls.isPlaying);
+        setDuration(Math.max(ls.duration, rightRef.current?.getState?.()?.duration || 0));
+      }
+      pollRef.current = requestAnimationFrame(poll);
+    };
+    pollRef.current = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(pollRef.current);
+  }, [bothLoaded]);
+
+  // Shared control helpers
+  const both = (fn) => { fn(leftRef.current); fn(rightRef.current); };
+
+  const togglePlay = () => {
+    both((r) => r?.togglePlay?.());
+  };
+  const goToStart = () => {
+    both((r) => r?.goToStart?.());
+  };
+  const goToEnd = () => {
+    both((r) => r?.goToEnd?.());
+  };
+  const changeSpeed = (s) => {
+    setSpeed(s);
+    both((r) => r?.setSpeed?.(s));
+  };
+  const toggleLoop = () => {
+    const next = !loop;
+    setLoop(next);
+    both((r) => r?.setLoop?.(next));
+  };
 
   const handleDrop = useCallback((side) => (e) => {
     e.preventDefault();
@@ -61,6 +119,8 @@ export default function CompareStudio() {
   const reset = () => {
     setLeftFile(null);
     setRightFile(null);
+    setPlayhead(0);
+    setIsPlaying(false);
   };
 
   // Landing page with two drop zones
@@ -122,7 +182,6 @@ export default function CompareStudio() {
         </div>
 
         <div style={{ display: "flex", gap: 32, flexWrap: "wrap", justifyContent: "center" }}>
-          {/* Left drop zone */}
           <DropZone
             label="Expected (Golden)"
             file={leftFile}
@@ -132,8 +191,6 @@ export default function CompareStudio() {
             onClear={() => setLeftFile(null)}
             V={V}
           />
-
-          {/* Right drop zone */}
           <DropZone
             label="Actual (Test)"
             file={rightFile}
@@ -152,7 +209,7 @@ export default function CompareStudio() {
     );
   }
 
-  // Side-by-side view
+  // Side-by-side view with shared controls
   return (
     <div
       style={{
@@ -164,16 +221,16 @@ export default function CompareStudio() {
         fontFamily: "'SF Mono', 'Fira Code', monospace",
       }}
     >
-      {/* Shared header */}
+      {/* Shared control bar */}
       <div
         style={{
-          height: 36,
+          height: 48,
           background: V.bgCard,
           borderBottom: `1px solid ${V.border}`,
           display: "flex",
           alignItems: "center",
           padding: "0 12px",
-          gap: 12,
+          gap: 10,
           flexShrink: 0,
         }}
       >
@@ -188,8 +245,156 @@ export default function CompareStudio() {
         >
           ← Player
         </a>
-        <span style={{ fontSize: 14, fontWeight: 700, color: V.orange }}>Compare Mode</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: V.orange }}>Compare</span>
+
+        <div style={{ width: 1, height: 20, background: V.border, margin: "0 4px" }} />
+
+        {/* Transport controls */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            background: V.bgPanel,
+            border: `1px solid ${V.border}`,
+            borderRadius: 10,
+            padding: "2px 4px",
+          }}
+        >
+          <button
+            onClick={goToStart}
+            style={{
+              background: "none",
+              border: "none",
+              color: V.textDim,
+              cursor: "pointer",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 18,
+              outline: "none",
+            }}
+          >
+            ⏮
+          </button>
+          <button
+            onClick={togglePlay}
+            style={{
+              background: isPlaying ? V.orange : "none",
+              border: "none",
+              color: isPlaying ? "#fff" : V.textDim,
+              cursor: "pointer",
+              width: 42,
+              height: 32,
+              borderRadius: 8,
+              fontSize: 20,
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              outline: "none",
+            }}
+          >
+            {isPlaying ? "⏸" : "▶"}
+          </button>
+          <button
+            onClick={goToEnd}
+            style={{
+              background: "none",
+              border: "none",
+              color: V.textDim,
+              cursor: "pointer",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 18,
+              outline: "none",
+            }}
+          >
+            ⏭
+          </button>
+          <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
+          <button
+            onClick={toggleLoop}
+            title={loop ? "Loop on" : "Loop off"}
+            style={{
+              background: loop ? V.orange + "18" : "none",
+              border: loop ? `1px solid ${V.orange}40` : "1px solid transparent",
+              color: loop ? V.orange : V.textDim,
+              cursor: "pointer",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 18,
+              fontWeight: 700,
+              outline: "none",
+            }}
+          >
+            ⟲
+          </button>
+        </div>
+
+        {/* Time display */}
+        <div
+          style={{
+            fontVariantNumeric: "tabular-nums",
+            fontSize: 16,
+            fontWeight: 600,
+            background: V.bg,
+            border: `1px solid ${V.border}`,
+            borderRadius: 6,
+            padding: "3px 10px",
+            minWidth: 80,
+            textAlign: "center",
+            color: V.orange,
+          }}
+        >
+          {fmt(playhead)}
+        </div>
+        <span style={{ color: V.textDim, fontSize: 13 }}>/ {fmt(duration)}</span>
+
+        {/* Speed */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            background: V.bgPanel,
+            border: `1px solid ${V.border}`,
+            borderRadius: 6,
+            padding: "3px 8px",
+          }}
+        >
+          <input
+            type="range"
+            min={0.1}
+            max={5}
+            step={0.1}
+            value={speed}
+            onChange={(e) => changeSpeed(parseFloat(e.target.value))}
+            style={{ width: 48, accentColor: V.orange, height: 2, cursor: "pointer", outline: "none" }}
+          />
+          <span
+            style={{
+              fontSize: 11,
+              color: speed === 1 ? V.textDim : V.orange,
+              fontVariantNumeric: "tabular-nums",
+              minWidth: 28,
+              textAlign: "center",
+              fontWeight: speed !== 1 ? 700 : 400,
+            }}
+          >
+            {speed.toFixed(1)}×
+          </span>
+        </div>
+
         <div style={{ flex: 1 }} />
+
+        {/* Labels */}
+        <span style={{ fontSize: 12, color: V.textDim, padding: "2px 8px", background: V.bgPanel, borderRadius: 4, border: `1px solid ${V.border}` }}>
+          ◀ Expected
+        </span>
+        <span style={{ fontSize: 12, color: V.textDim, padding: "2px 8px", background: V.bgPanel, borderRadius: 4, border: `1px solid ${V.border}` }}>
+          Actual ▶
+        </span>
+
         <button
           onClick={reset}
           style={{
@@ -226,18 +431,22 @@ export default function CompareStudio() {
       <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
         <div style={{ flex: 1, borderRight: `1px solid ${V.border}`, overflow: "hidden" }}>
           <RecordStudio
+            ref={leftRef}
             initialFile={leftFile}
             forceLayout="stacked"
             label="Expected"
             hideGlobalChrome
+            hideControls
           />
         </div>
         <div style={{ flex: 1, overflow: "hidden" }}>
           <RecordStudio
+            ref={rightRef}
             initialFile={rightFile}
             forceLayout="stacked"
             label="Actual"
             hideGlobalChrome
+            hideControls
           />
         </div>
       </div>
