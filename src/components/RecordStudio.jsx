@@ -1300,8 +1300,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     if (file) loadTrace(file);
   };
 
-  // ─── Auto-load trace from URL param ─────────────────────────────────────
+  // ─── Auto-load trace from URL param or initialFile prop ──────────────
   useEffect(() => {
+    if (initialFile) {
+      loadTrace(initialFile);
+      return;
+    }
+    if (hideGlobalChrome) return; // embedded mode — no URL param loading
     const params = new URLSearchParams(window.location.search);
     const traceUrl = params.get("record");
     if (traceUrl) {
@@ -1314,7 +1319,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         .then((blob) => loadTrace(blob))
         .catch((e) => setError(e.message));
     }
-  }, []);
+  }, [initialFile]);
 
   // ─── Playback ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1468,7 +1473,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         e.preventDefault();
         setShowSide((v) => !v);
       }
-      if (key === "v" || key === "V") {
+      if ((key === "v" || key === "V") && !forceLayout) {
         e.preventDefault();
         setLayoutMode((m) => (m === "main" ? "stacked" : "main"));
       }
