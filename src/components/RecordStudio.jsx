@@ -932,7 +932,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
-const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
+const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, compact: compactProp, ...restProps } = {}, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -960,7 +960,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
   const helpRef = useRef(false);
   const [maskSensitive, setMaskSensitive] = useState(true);
   const [showDetail, setShowDetail] = useState(false);
-  const [layoutMode, setLayoutMode] = useState(getPanelDefault("layout", "main"));
+  const [layoutMode, setLayoutMode] = useState(forceLayout || getPanelDefault("layout", "main"));
   const [screenshotH, setScreenshotH] = useState(null); // null = 50% default
   const playRef = useRef(null);
   const scrollRef = useRef(null);
