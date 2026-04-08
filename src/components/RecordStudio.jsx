@@ -1691,6 +1691,10 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           <a href="/?record=vibium-demo-record.zip" style={{ color: V.orange, textDecoration: "none" }}>
             play a sample recording
           </a>
+          {" · "}
+          <a href="/compare" style={{ color: V.orange, textDecoration: "none" }}>
+            compare two recordings
+          </a>
         </div>
 
         {loading && <div style={{ color: V.orange, fontSize: 16 }}>Loading trace...</div>}
