@@ -968,6 +968,20 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const footerRef = useRef(null);
   const [footerNarrow, setFooterNarrow] = useState(false);
 
+  // Expose imperative API for parent (CompareStudio shared controls)
+  useImperativeHandle(_ref, () => ({
+    play: () => setIsPlaying(true),
+    pause: () => setIsPlaying(false),
+    togglePlay: () => setIsPlaying((p) => !p),
+    setPlayhead: (t) => setPlayhead(t),
+    setSpeed: (s) => setSpeed(s),
+    setLoop: (l) => setLoop(l),
+    goToStart: () => { setPlayhead(0); setIsPlaying(false); },
+    goToEnd: () => { if (traceData) { setPlayhead(traceData.duration); setIsPlaying(false); } },
+    getState: () => ({ playhead, isPlaying, speed, loop, duration: traceData?.duration || 0 }),
+  }), [playhead, isPlaying, speed, loop, traceData]);
+
+
   // Detect if footer has room for stats
   useEffect(() => {
     const el = footerRef.current;
