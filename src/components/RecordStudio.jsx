@@ -2122,7 +2122,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           >
             🔦
           </button>
-          {!mobile && (
+          {!mobile && !forceLayout && (
             <button
               onClick={() => setLayoutMode((m) => (m === "main" ? "stacked" : "main"))}
               title={layoutMode === "main" ? "Stacked layout (V)" : "Default layout (V)"}
