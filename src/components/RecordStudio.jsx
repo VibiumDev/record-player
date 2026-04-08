@@ -2226,7 +2226,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             <span style={{ fontSize: 13, color: V.textDim }}>▴</span>
           </div>
         </div>
-      ) : (
+      ) : !hideControls ? (
         /* Collapsed toolbar — expand chevron */
         <div
           onClick={() => setShowToolbar(true)}
@@ -2246,7 +2246,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         >
           <span style={{ fontSize: 13, color: V.textDim }}>▾</span>
         </div>
-      )}
+      ) : null}
 
       {/* ─── Main area ─────────────────────────────────────────── */}
       <div
