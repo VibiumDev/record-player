@@ -2357,13 +2357,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 />
                 {overlayEnabled && (
                   <ActionOverlay
-                    action={(() => {
-                      const a = selectedAction || currentAction;
-                      if (!a) return null;
-                      const start = a.startTime || 0;
-                      const end = a.endTime || start;
-                      return playhead >= start - 50 && playhead < end ? a : null;
-                    })()}
+                    action={selectedAction || currentAction}
                     screenshot={currentScreenshot}
                     viewport={
                       traceData?.contextOptions?.options?.viewport ||
