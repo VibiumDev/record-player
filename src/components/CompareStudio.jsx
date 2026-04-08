@@ -44,6 +44,7 @@ export default function CompareStudio() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
+  const [highlightOn, setHighlightOn] = useState(true);
   const [playhead, setPlayhead] = useState(0);
   const [duration, setDuration] = useState(0);
 
@@ -329,6 +330,28 @@ export default function CompareStudio() {
             }}
           >
             ⟲
+          </button>
+          <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
+          <button
+            onClick={() => {
+              const next = !highlightOn;
+              setHighlightOn(next);
+              both((r) => r?.setHighlight?.(next));
+            }}
+            title={highlightOn ? "Disable highlight" : "Enable highlight"}
+            style={{
+              background: highlightOn ? V.orange + "18" : "none",
+              border: highlightOn ? `1px solid ${V.orange}40` : "1px solid transparent",
+              color: highlightOn ? V.orange : V.textDim,
+              cursor: "pointer",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 18,
+              fontWeight: 700,
+              outline: "none",
+            }}
+          >
+            🔦
           </button>
         </div>
 
