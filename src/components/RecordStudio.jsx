@@ -932,22 +932,12 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
-const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, onPlayheadChange, compact: compactProp, ...restProps } = {}, _ref) {
+const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, compact: compactProp, ...restProps } = {}, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [traceData, setTraceData] = useState(null);
-  const [playheadRaw, setPlayheadRaw] = useState(0);
-  const onPlayheadChangeRef = useRef(onPlayheadChange);
-  onPlayheadChangeRef.current = onPlayheadChange;
-  const setPlayhead = useCallback((v) => {
-    setPlayheadRaw((prev) => {
-      const next = typeof v === "function" ? v(prev) : v;
-      if (onPlayheadChangeRef.current) onPlayheadChangeRef.current(next);
-      return next;
-    });
-  }, []);
-  const playhead = playheadRaw;
+  const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activePanel, setActivePanel] = useState("actions");
   const [zoom, setZoom] = useState(1);

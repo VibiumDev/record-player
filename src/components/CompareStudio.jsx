@@ -52,7 +52,6 @@ export default function CompareStudio() {
   const pollRef = useRef(null);
 
   const V = useMemo(() => ({ ...brand, ...(dark ? darkSurface : lightSurface) }), [dark]);
-  const syncSource = useRef(null); // "left" | "right" | null — prevents echo loops
 
   const bothLoaded = leftFile && rightFile;
 
@@ -438,12 +437,6 @@ export default function CompareStudio() {
             label="Expected"
             hideGlobalChrome
             hideControls
-            onPlayheadChange={(t) => {
-              if (syncSource.current === "right") return;
-              syncSource.current = "left";
-              rightRef.current?.setPlayhead?.(t);
-              syncSource.current = null;
-            }}
           />
         </div>
         <div style={{ flex: 1, overflow: "hidden" }}>
@@ -454,12 +447,6 @@ export default function CompareStudio() {
             label="Actual"
             hideGlobalChrome
             hideControls
-            onPlayheadChange={(t) => {
-              if (syncSource.current === "left") return;
-              syncSource.current = "right";
-              leftRef.current?.setPlayhead?.(t);
-              syncSource.current = null;
-            }}
           />
         </div>
       </div>
