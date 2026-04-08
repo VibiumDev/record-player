@@ -1559,6 +1559,32 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
   // ─── Drop zone (no trace loaded) ──────────────────────────────────────
   if (!traceData) {
+    if (hideGlobalChrome) {
+      // Embedded mode — show compact loading/drop state
+      return (
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          style={{
+            width: "100%",
+            height: "100%",
+            background: V.bg,
+            color: V.text,
+            fontFamily: "'SF Mono', 'Fira Code', monospace",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+          }}
+        >
+          {label && <div style={{ fontSize: 13, fontWeight: 700, color: V.orange, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>}
+          {loading && <div style={{ color: V.orange, fontSize: 14 }}>Loading trace...</div>}
+          {error && <div style={{ color: "#ef4444", fontSize: 13 }}>Error: {error}</div>}
+          {!loading && !error && <div style={{ color: V.textDim, fontSize: 14 }}>Drop a zip file or waiting for file...</div>}
+        </div>
+      );
+    }
     return (
       <div
         onDrop={handleDrop}
