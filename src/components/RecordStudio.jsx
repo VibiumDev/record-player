@@ -932,7 +932,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
-const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
+const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, compact: compactProp, ...restProps } = {}, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -960,7 +960,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
   const helpRef = useRef(false);
   const [maskSensitive, setMaskSensitive] = useState(true);
   const [showDetail, setShowDetail] = useState(false);
-  const [layoutMode, setLayoutMode] = useState(getPanelDefault("layout", "main"));
+  const [layoutMode, setLayoutMode] = useState(forceLayout || getPanelDefault("layout", "main"));
   const [screenshotH, setScreenshotH] = useState(null); // null = 50% default
   const playRef = useRef(null);
   const scrollRef = useRef(null);
@@ -1035,10 +1035,12 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
 
   // Auto-switch to stacked layout on narrow/portrait screens
   useEffect(() => {
+    if (forceLayout) { setLayoutMode(forceLayout); return; }
     if (mobile) setLayoutMode("stacked");
-  }, [mobile]);
+  }, [mobile, forceLayout]);
 
   useEffect(() => {
+    if (forceLayout) return; // skip auto-switch when layout is forced
     const check = () => {
       const portrait = window.innerHeight > window.innerWidth;
       const narrow = window.innerWidth < 900;
@@ -1047,7 +1049,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
-  }, []);
+  }, [forceLayout]);
 
   // Merge brand + surface colors for current theme
   const V = useMemo(() => ({ ...brand, ...(dark ? darkSurface : lightSurface) }), [dark]);
@@ -1298,8 +1300,13 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
     if (file) loadTrace(file);
   };
 
-  // ─── Auto-load trace from URL param ─────────────────────────────────────
+  // ─── Auto-load trace from URL param or initialFile prop ──────────────
   useEffect(() => {
+    if (initialFile) {
+      loadTrace(initialFile);
+      return;
+    }
+    if (hideGlobalChrome) return; // embedded mode — no URL param loading
     const params = new URLSearchParams(window.location.search);
     const traceUrl = params.get("record");
     if (traceUrl) {
@@ -1312,7 +1319,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
         .then((blob) => loadTrace(blob))
         .catch((e) => setError(e.message));
     }
-  }, []);
+  }, [initialFile]);
 
   // ─── Playback ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1466,7 +1473,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
         e.preventDefault();
         setShowSide((v) => !v);
       }
-      if (key === "v" || key === "V") {
+      if ((key === "v" || key === "V") && !forceLayout) {
         e.preventDefault();
         setLayoutMode((m) => (m === "main" ? "stacked" : "main"));
       }
@@ -1552,6 +1559,32 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
 
   // ─── Drop zone (no trace loaded) ──────────────────────────────────────
   if (!traceData) {
+    if (hideGlobalChrome) {
+      // Embedded mode — show compact loading/drop state
+      return (
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          style={{
+            width: "100%",
+            height: "100%",
+            background: V.bg,
+            color: V.text,
+            fontFamily: "'SF Mono', 'Fira Code', monospace",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+          }}
+        >
+          {label && <div style={{ fontSize: 13, fontWeight: 700, color: V.orange, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>}
+          {loading && <div style={{ color: V.orange, fontSize: 14 }}>Loading trace...</div>}
+          {error && <div style={{ color: "#ef4444", fontSize: 13 }}>Error: {error}</div>}
+          {!loading && !error && <div style={{ color: V.textDim, fontSize: 14 }}>Drop a zip file or waiting for file...</div>}
+        </div>
+      );
+    }
     return (
       <div
         onDrop={handleDrop}
@@ -1657,6 +1690,10 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
           Or{" "}
           <a href="/?record=vibium-demo-record.zip" style={{ color: V.orange, textDecoration: "none" }}>
             play a sample recording
+          </a>
+          {" · "}
+          <a href="/compare" style={{ color: V.orange, textDecoration: "none" }}>
+            compare two recordings
           </a>
         </div>
 
@@ -1818,7 +1855,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
       onDragOver={handleDragOver}
       style={{
         width: "100%",
-        height: "100vh",
+        height: hideGlobalChrome ? "100%" : "100vh",
         background: V.bg,
         color: V.text,
         fontFamily: "'SF Mono', 'Fira Code', monospace",
@@ -1874,7 +1911,8 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
               }}
             />
           </div>
-          {!mobile && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Player</span>}
+          {!mobile && !hideGlobalChrome && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Player</span>}
+          {label && <span style={{ fontWeight: 700, fontSize: 13, color: V.orange, textTransform: "uppercase", letterSpacing: "0.05em", background: V.orange + "18", padding: "2px 10px", borderRadius: 6, border: `1px solid ${V.orange}30` }}>{label}</span>}
           <div style={{ flex: 1 }} />
 
           <div
@@ -2089,7 +2127,7 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
           >
             🔦
           </button>
-          {!mobile && (
+          {!mobile && !forceLayout && (
             <button
               onClick={() => setLayoutMode((m) => (m === "main" ? "stacked" : "main"))}
               title={layoutMode === "main" ? "Stacked layout (V)" : "Default layout (V)"}
@@ -2110,24 +2148,26 @@ const RecordStudio = forwardRef(function RecordStudio(_props, _ref) {
               {layoutMode === "stacked" ? "▤" : "▥"}
             </button>
           )}
-          <button
-            onClick={() => {
-              setTraceData(null);
-              setFileList([]);
-            }}
-            style={{
-              background: V.bgCard,
-              border: `1px solid ${V.border}`,
-              color: V.textDim,
-              cursor: "pointer",
-              padding: "4px 10px",
-              borderRadius: 4,
-              fontSize: mobile ? 12 : 14,
-              fontFamily: "inherit",
-            }}
-          >
-            {mobile ? "⏏" : "⏏ Eject"}
-          </button>
+          {!hideGlobalChrome && (
+            <button
+              onClick={() => {
+                setTraceData(null);
+                setFileList([]);
+              }}
+              style={{
+                background: V.bgCard,
+                border: `1px solid ${V.border}`,
+                color: V.textDim,
+                cursor: "pointer",
+                padding: "4px 10px",
+                borderRadius: 4,
+                fontSize: mobile ? 12 : 14,
+                fontFamily: "inherit",
+              }}
+            >
+              {mobile ? "⏏" : "⏏ Eject"}
+            </button>
+          )}
           {!mobile && (
             <button
               onClick={() => setDark(!dark)}
