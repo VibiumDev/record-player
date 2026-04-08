@@ -2144,24 +2144,26 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               {layoutMode === "stacked" ? "▤" : "▥"}
             </button>
           )}
-          <button
-            onClick={() => {
-              setTraceData(null);
-              setFileList([]);
-            }}
-            style={{
-              background: V.bgCard,
-              border: `1px solid ${V.border}`,
-              color: V.textDim,
-              cursor: "pointer",
-              padding: "4px 10px",
-              borderRadius: 4,
-              fontSize: mobile ? 12 : 14,
-              fontFamily: "inherit",
-            }}
-          >
-            {mobile ? "⏏" : "⏏ Eject"}
-          </button>
+          {!hideGlobalChrome && (
+            <button
+              onClick={() => {
+                setTraceData(null);
+                setFileList([]);
+              }}
+              style={{
+                background: V.bgCard,
+                border: `1px solid ${V.border}`,
+                color: V.textDim,
+                cursor: "pointer",
+                padding: "4px 10px",
+                borderRadius: 4,
+                fontSize: mobile ? 12 : 14,
+                fontFamily: "inherit",
+              }}
+            >
+              {mobile ? "⏏" : "⏏ Eject"}
+            </button>
+          )}
           {!mobile && (
             <button
               onClick={() => setDark(!dark)}
