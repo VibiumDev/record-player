@@ -1907,7 +1907,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               }}
             />
           </div>
-          {!mobile && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Player</span>}
+          {!mobile && !hideGlobalChrome && <span style={{ fontWeight: 700, fontSize: 16, color: V.orange }}>Vibium Player</span>}
+          {label && <span style={{ fontWeight: 700, fontSize: 13, color: V.orange, textTransform: "uppercase", letterSpacing: "0.05em", background: V.orange + "18", padding: "2px 10px", borderRadius: 6, border: `1px solid ${V.orange}30` }}>{label}</span>}
           <div style={{ flex: 1 }} />
 
           <div
