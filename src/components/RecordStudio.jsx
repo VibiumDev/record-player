@@ -38,6 +38,27 @@ function parseNDJSON(text) {
     .filter(Boolean);
 }
 
+function harMonotonicTimeToMs(value) {
+  const time = Number(value);
+  if (!Number.isFinite(time)) return 0;
+
+  // Playwright/Vibium HAR resource snapshots store _monotonicTime in
+  // seconds, while action/screencast events use milliseconds.
+  return Math.abs(time) > 0 && Math.abs(time) < 10_000_000_000 ? time * 1000 : time;
+}
+
+function harSnapshotStartTimeToMs(snapshot) {
+  const monotonicTime = harMonotonicTimeToMs(snapshot?._monotonicTime);
+  if (monotonicTime) return monotonicTime;
+
+  const startedDateTime = Date.parse(snapshot?.startedDateTime || "");
+  return Number.isFinite(startedDateTime) ? startedDateTime : 0;
+}
+
+function finiteTimelineTimes(times) {
+  return times.map((t) => Number(t)).filter(Number.isFinite);
+}
+
 // ─── Extract data from parsed trace events ──────────────────────────────────
 function processTraceEvents(events) {
   const actions = [];
@@ -275,11 +296,12 @@ function processNetworkEvents(events) {
       const snap = evt.snapshot;
       const req = snap.request || {};
       const resp = snap.response || {};
+      const startTime = harSnapshotStartTimeToMs(snap);
       results.push({
         url: req.url || "",
         method: req.method || "GET",
-        startTime: snap._monotonicTime || 0,
-        endTime: (snap._monotonicTime || 0) + (snap.time || 0),
+        startTime,
+        endTime: startTime + (Number(snap.time) || 0),
         status: resp.status || 0,
         statusText: resp.statusText || "",
         mimeType: resp.content?.mimeType || "",
@@ -1216,11 +1238,15 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         ...screenshotRefs.map((s) => s.time).filter(Boolean),
         ...groups.flatMap((g) => [g.startTime, g.endTime].filter(Boolean)),
       ];
+      const finiteTimes = finiteTimelineTimes(allTimes);
 
-      const minTime = Math.min(...allTimes) || 0;
-      const maxTime = Math.max(...allTimes) || 1;
-      const duration = maxTime - minTime;
-      const normalize = (t) => (t || 0) - minTime;
+      const minTime = finiteTimes.length ? Math.min(...finiteTimes) : 0;
+      const maxTime = finiteTimes.length ? Math.max(...finiteTimes) : minTime + 1;
+      const duration = Math.max(0, maxTime - minTime);
+      const normalize = (t) => {
+        const time = Number(t);
+        return Number.isFinite(time) ? time - minTime : 0;
+      };
 
       setTraceData({
         actions: actions.map((a) => ({
@@ -1566,10 +1592,12 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   // ─── Timeline ticks ────────────────────────────────────────────────────
   const ticks = useMemo(() => {
     if (!traceData) return [];
-    const dur = traceData.duration;
+    const dur = Number(traceData.duration);
+    if (!Number.isFinite(dur) || dur <= 0) return [0];
     const iv = dur > 30000 ? 5000 : dur > 10000 ? 2000 : dur > 5000 ? 1000 : 500;
     const arr = [];
-    for (let t = 0; t <= dur; t += iv) arr.push(t);
+    for (let t = 0; t <= dur && arr.length < 2000; t += iv) arr.push(t);
+    if (arr[arr.length - 1] !== dur) arr.push(dur);
     return arr;
   }, [traceData, zoom]);
 
@@ -4128,5 +4156,12 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     </div>
   );
 });
+
+export const __recordStudioInternals = {
+  finiteTimelineTimes,
+  harMonotonicTimeToMs,
+  harSnapshotStartTimeToMs,
+  processNetworkEvents,
+};
 
 export default RecordStudio;
