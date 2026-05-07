@@ -122,12 +122,9 @@ function harMonotonicTimeToMs(value) {
   const time = Number(value);
   if (!Number.isFinite(time)) return 0;
 
-  // Playwright HAR resource snapshots may store _monotonicTime as wall-clock
-  // seconds (e.g. 1777754051.446). Vibium traces store it as milliseconds
-  // relative to the trace start (e.g. 3..35215). Only multiply when the
-  // magnitude looks like wall-clock seconds; otherwise treat as ms.
-  const abs = Math.abs(time);
-  return abs > 1e9 && abs < 1e10 ? time * 1000 : time;
+  // Playwright/Vibium HAR resource snapshots store _monotonicTime in
+  // seconds, while action/screencast events use milliseconds.
+  return Math.abs(time) > 0 && Math.abs(time) < 10_000_000_000 ? time * 1000 : time;
 }
 
 function harSnapshotStartTimeToMs(snapshot) {
