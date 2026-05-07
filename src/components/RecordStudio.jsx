@@ -1655,6 +1655,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     if (!action) return null;
     if (actionFilter !== "all" && !isHumanAction(action.apiName)) return null;
     if (isClickAction(action.apiName) && playhead >= (action.endTime || action.startTime || 0)) return null;
+    if ((action.apiName || "").toLowerCase().includes("waitfor")) return null;
     return action;
   }, [currentAction, playhead, selectedAction, actionFilter]);
 
