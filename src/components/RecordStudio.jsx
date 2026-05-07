@@ -38,6 +38,84 @@ function parseNDJSON(text) {
     .filter(Boolean);
 }
 
+function consoleValuePreview(value) {
+  if (value == null) return String(value);
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function consoleArgPreview(arg) {
+  if (arg == null) return String(arg);
+  if (Object.prototype.hasOwnProperty.call(arg, "value")) return consoleValuePreview(arg.value);
+  if (arg.unserializableValue != null) return String(arg.unserializableValue);
+  if (arg.description) return String(arg.description);
+  if (arg.text) return String(arg.text);
+  if (arg.type) return `[${arg.type}]`;
+  return consoleValuePreview(arg);
+}
+
+function formatConsoleStackTrace(stackTrace) {
+  const frames = stackTrace?.callFrames || stackTrace?.frames || [];
+  if (!Array.isArray(frames) || frames.length === 0) return "";
+
+  return frames
+    .map((frame) => {
+      const fn = frame.functionName || frame.function || "<anonymous>";
+      const url = frame.url || frame.uri || frame.fileName || "";
+      const line = frame.lineNumber ?? frame.line ?? "";
+      const column = frame.columnNumber ?? frame.column ?? "";
+      const location = [url, line, column].filter((part) => part !== "").join(":");
+      return `at ${fn}${location ? ` (${location})` : ""}`;
+    })
+    .join("\n");
+}
+
+function formatConsoleLocation(location) {
+  if (!location || typeof location !== "object") return "";
+  const url = location.url || location.uri || location.fileName || "";
+  const line = location.lineNumber ?? location.line ?? "";
+  const column = location.columnNumber ?? location.column ?? "";
+  return [url, line, column].filter((part) => part !== "").join(":");
+}
+
+function getConsoleEventText(params = {}) {
+  const args = Array.isArray(params.args) ? params.args : [];
+  const argText = args.map(consoleArgPreview).join(" ");
+  return params.text || params.message || argText || "";
+}
+
+function getConsoleEventDetails(params = {}) {
+  const args = Array.isArray(params.args) ? params.args : [];
+  const sections = [];
+  const typeLine = [params.source && `Source: ${params.source}`, params.type && `Type: ${params.type}`]
+    .filter(Boolean)
+    .join("\n");
+  if (typeLine) sections.push(typeLine);
+
+  const text = getConsoleEventText(params);
+  if (text) sections.push(`Message:\n${text}`);
+
+  if (args.length) {
+    sections.push(`Arguments:\n${args.map((arg, index) => `[${index}] ${consoleArgPreview(arg)}`).join("\n")}`);
+  }
+
+  const stack = formatConsoleStackTrace(params.stackTrace);
+  if (stack) sections.push(`Stack:\n${stack}`);
+
+  if (params.exceptionDetails) {
+    sections.push(`Exception:\n${consoleValuePreview(params.exceptionDetails)}`);
+  }
+
+  const location = formatConsoleLocation(params.location);
+  if (location) sections.push(`Location:\n${location}`);
+
+  if (sections.length) return sections.join("\n\n");
+  return consoleValuePreview(params);
 function harMonotonicTimeToMs(value) {
   const time = Number(value);
   if (!Number.isFinite(time)) return 0;
@@ -209,11 +287,14 @@ function processTraceEvents(events) {
 
     // Console: event with method=log.entryAdded
     if (type === "event" && evt.method === "log.entryAdded") {
-      const args = evt.params?.args || [];
+      const params = evt.params || {};
       consoleEvents.push({
-        time: evt.time || evt.params?.timestamp,
-        type: evt.params?.level || "log",
-        text: args.map((a) => a.value ?? JSON.stringify(a)).join(" ") || "",
+        time: evt.time || params.timestamp,
+        type: params.level || "log",
+        text: getConsoleEventText(params),
+        details: getConsoleEventDetails(params),
+        args: params.args || [],
+        stackTrace: params.stackTrace || null,
       });
       continue;
     }
@@ -966,6 +1047,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
   const [selectedAction, setSelectedAction] = useState(null);
+  const [selectedConsoleEvent, setSelectedConsoleEvent] = useState(null);
   const [actionFilter, setActionFilter] = useState("human");
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const [hoveredThumb, setHoveredThumb] = useState(null);
@@ -1277,6 +1359,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         fileCount: files.length,
         eventCount: allEvents.length,
       });
+      setSelectedAction(null);
+      setSelectedConsoleEvent(null);
 
       setPlayhead(urlParams.at != null ? Math.max(0, Math.min(urlParams.at, duration)) : 0);
 
@@ -3108,7 +3192,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                         ref={
                           isActive ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined
                         }
-                        onClick={() => setPlayhead(c.time)}
+                        onClick={() => {
+                          setPlayhead(c.time);
+                          setSelectedConsoleEvent(c);
+                          setShowDetail(true);
+                        }}
                         style={{
                           display: "flex",
                           alignItems: "flex-start",
@@ -3117,8 +3205,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           borderRadius: 5,
                           marginBottom: 1,
                           cursor: "pointer",
-                          background: isActive ? `${color}15` : "transparent",
-                          border: isActive ? `1px solid ${color}30` : "1px solid transparent",
+                          background: isActive ? `${color}15` : selectedConsoleEvent === c ? `${color}08` : "transparent",
+                          border: isActive || selectedConsoleEvent === c ? `1px solid ${color}30` : "1px solid transparent",
                           opacity: isPast ? 0.4 : 1,
                           transition: "opacity 0.15s, background 0.15s",
                         }}
@@ -3427,6 +3515,140 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           if (masked.value) masked.value = "••••••";
                           return JSON.stringify(masked, null, 2);
                         })()}
+                      </pre>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Console detail */}
+              {selectedConsoleEvent && activePanel === "console" && (
+                <>
+                  <div
+                    onMouseDown={(e) => {
+                      if (e.target.dataset.chevron || !showDetail) return;
+                      e.preventDefault();
+                      detailDrag.current = true;
+                      detailDragStart.current = { y: e.clientY, h: detailH };
+                      document.body.style.cursor = "row-resize";
+                    }}
+                    onTouchStart={(e) => {
+                      if (e.target.dataset.chevron || !showDetail) return;
+                      const t = e.touches[0];
+                      detailDrag.current = true;
+                      detailDragStart.current = { y: t.clientY, h: detailH };
+                    }}
+                    style={{
+                      height: mobile ? 24 : 9,
+                      flexShrink: 0,
+                      cursor: showDetail ? "row-resize" : "default",
+                      background: "transparent",
+                      position: "relative",
+                      zIndex: 20,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      touchAction: "none",
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: mobile ? 11 : 4,
+                        left: 0,
+                        right: 0,
+                        height: 1,
+                        background: V.border,
+                        transition: "background 0.15s",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = V.orange)}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = V.border)}
+                    />
+                    <div
+                      data-chevron="1"
+                      onClick={() => setShowDetail((d) => !d)}
+                      style={{
+                        position: "absolute",
+                        top: "50%",
+                        left: "50%",
+                        transform: "translate(-50%, -50%)",
+                        width: 28,
+                        height: 16,
+                        borderRadius: 4,
+                        background: V.bgCard,
+                        border: `1px solid ${V.border}`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        color: V.textDim,
+                        zIndex: 21,
+                        transition: "color 0.15s, border-color 0.15s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = V.orange;
+                        e.currentTarget.style.borderColor = V.orange;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = V.textDim;
+                        e.currentTarget.style.borderColor = V.border;
+                      }}
+                    >
+                      {showDetail ? "▾" : "▴"}
+                    </div>
+                  </div>
+                  {showDetail && (
+                    <div
+                      style={{
+                        height: detailH,
+                        padding: "6px 8px 8px",
+                        overflowY: "auto",
+                        flexShrink: 0,
+                        background: V.bg,
+                        userSelect: "text",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 8,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: levelColors[selectedConsoleEvent.type] || V.textMid,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {selectedConsoleEvent.type}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: V.textDim,
+                            flexShrink: 0,
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                        >
+                          {fmt(selectedConsoleEvent.time)}
+                        </span>
+                      </div>
+                      <pre
+                        style={{
+                          fontSize: 12,
+                          color: V.textMid,
+                          margin: 0,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {selectedConsoleEvent.details || selectedConsoleEvent.text}
                       </pre>
                     </div>
                   )}
