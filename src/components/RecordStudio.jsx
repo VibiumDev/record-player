@@ -139,6 +139,65 @@ function finiteTimelineTimes(times) {
   return times.map((t) => Number(t)).filter(Number.isFinite);
 }
 
+function uniqueBoosts(values) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Math.round(Number(value) * 1000) / 1000)
+        .filter((value) => Number.isFinite(value) && value >= 1 && value <= 4),
+    ),
+  );
+}
+
+function inferActionCoordinateBoosts(actions, fallbackViewport) {
+  const groups = new Map();
+
+  for (const action of actions) {
+    const viewport = action._snapshotMeta?.viewport || fallbackViewport;
+    if (!viewport?.width || !viewport?.height) continue;
+
+    const right = Math.max(action.point?.x || 0, action.box ? action.box.x + action.box.width : 0);
+    const bottom = Math.max(action.point?.y || 0, action.box ? action.box.y + action.box.height : 0);
+    if (!right || !bottom) continue;
+
+    const key = `${viewport.width}x${viewport.height}`;
+    const group = groups.get(key) || { viewport, maxRight: 0, maxBottom: 0 };
+    group.maxRight = Math.max(group.maxRight, right);
+    group.maxBottom = Math.max(group.maxBottom, bottom);
+    groups.set(key, group);
+  }
+
+  const boostsByViewport = new Map();
+  for (const [key, group] of groups) {
+    const ratioX = group.viewport.width / group.maxRight;
+    const ratioY = group.viewport.height / group.maxBottom;
+    const nearestX = Math.round(ratioX);
+    const nearestY = Math.round(ratioY);
+    const fitX = (group.maxRight * nearestX) / group.viewport.width;
+    const fitY = (group.maxBottom * nearestY) / group.viewport.height;
+
+    if (
+      nearestX === nearestY &&
+      nearestX > 1 &&
+      nearestX <= 4 &&
+      Math.abs(ratioX - nearestX) <= 0.35 &&
+      Math.abs(ratioY - nearestY) <= 0.45 &&
+      fitX >= 0.82 &&
+      fitX <= 1.08 &&
+      fitY >= 0.7 &&
+      fitY <= 1.15
+    ) {
+      boostsByViewport.set(key, [nearestX]);
+    }
+  }
+
+  for (const action of actions) {
+    const viewport = action._snapshotMeta?.viewport || fallbackViewport;
+    const boosts = viewport ? boostsByViewport.get(`${viewport.width}x${viewport.height}`) : null;
+    if (boosts?.length) action._coordinateBoosts = boosts;
+  }
+}
+
 // ─── Extract data from parsed trace events ──────────────────────────────────
 function processTraceEvents(events) {
   const actions = [];
