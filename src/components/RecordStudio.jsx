@@ -424,6 +424,8 @@ function processTraceEvents(events) {
     }
   }
 
+  inferActionCoordinateBoosts(actions, fallbackViewport);
+
   return { actions, consoleEvents, contextOptions, screenshotRefs, groups, snapshotMetaMap, fallbackViewport };
 }
 
