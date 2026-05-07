@@ -1658,9 +1658,10 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const overlayAction = useMemo(() => {
     const action = selectedAction || currentAction;
     if (!action) return null;
+    if (actionFilter !== "all" && !isHumanAction(action.apiName)) return null;
     if (isClickAction(action.apiName) && playhead >= (action.endTime || action.startTime || 0)) return null;
     return action;
-  }, [currentAction, playhead, selectedAction]);
+  }, [currentAction, playhead, selectedAction, actionFilter]);
 
   const currentGroup = useMemo(() => {
     if (!traceData?.groups) return null;
