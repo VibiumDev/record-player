@@ -1643,7 +1643,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
     // Multiple actions can overlap; choose the most recent one at playhead.
     const candidates = traceData.actions.filter(
-      (a) => playhead >= (a.startTime || 0) - 20 && playhead <= (a.endTime || a.startTime || 0) + 20,
+      (a) => playhead >= (a.startTime || 0) - 20 && playhead <= (a.endTime || a.startTime || 0),
     );
     if (!candidates.length) return null;
 
@@ -1654,6 +1654,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       return aStart >= bStart ? a : best;
     }, null);
   }, [playhead, traceData]);
+
+  const overlayAction = useMemo(() => {
+    const action = selectedAction || currentAction;
+    if (!action) return null;
+    if (isClickAction(action.apiName) && playhead >= (action.endTime || action.startTime || 0)) return null;
+    return action;
+  }, [currentAction, playhead, selectedAction]);
 
   const currentGroup = useMemo(() => {
     if (!traceData?.groups) return null;
