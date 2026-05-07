@@ -1636,7 +1636,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
     // Multiple actions can overlap; choose the most recent one at playhead.
     const candidates = traceData.actions.filter(
-      (a) => playhead >= (a.startTime || 0) - 20 && playhead <= (a.endTime || a.startTime || 0) + 220,
+      (a) => playhead >= (a.startTime || 0) - 20 && playhead <= (a.endTime || a.startTime || 0) + 20,
     );
     if (!candidates.length) return null;
 
@@ -1658,7 +1658,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
   // ─── Sync detail pane with playhead (only during playback) ───────────
   useEffect(() => {
-    if (isPlaying && currentAction) setSelectedAction(currentAction);
+    if (!isPlaying) return;
+    setSelectedAction(currentAction);
   }, [currentAction, isPlaying]);
 
   // ─── Scroll timeline to selected action ─────────────────────────────
