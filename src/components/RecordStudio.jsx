@@ -4452,6 +4452,8 @@ export const __recordStudioInternals = {
   finiteTimelineTimes,
   harMonotonicTimeToMs,
   harSnapshotStartTimeToMs,
+  inferActionCoordinateBoosts,
+  normalizeActionCoords,
   processNetworkEvents,
 };
 
