@@ -116,6 +116,8 @@ function getConsoleEventDetails(params = {}) {
 
   if (sections.length) return sections.join("\n\n");
   return consoleValuePreview(params);
+}
+
 function harMonotonicTimeToMs(value) {
   const time = Number(value);
   if (!Number.isFinite(time)) return 0;
