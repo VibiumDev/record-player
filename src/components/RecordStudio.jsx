@@ -800,9 +800,8 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
       penalty += Math.abs(effW - targetViewport.width) * 0.03;
       penalty += Math.abs(effH - targetViewport.height) * 0.03;
 
-      const inferredMaxBoost = Math.max(...inferredBoosts);
-      if (inferredMaxBoost >= 2 && c.boost === 1) penalty += 120;
-      if (c.boost > 1 && inferredBoosts.includes(c.boost)) penalty -= 120;
+      // No bias toward higher boosts — let the geometric fit decide.
+
     }
 
     let bx, by, bw, bh;
