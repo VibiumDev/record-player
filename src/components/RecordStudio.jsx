@@ -510,6 +510,11 @@ function actionColor(apiName) {
   return brand.orange;
 }
 
+function isClickAction(apiName) {
+  const n = (apiName || "").toLowerCase();
+  return n.includes("click") || n.includes("tap") || n.includes("dblclick");
+}
+
 function statusColor(s) {
   if (s >= 400) return "#ef4444";
   if (s >= 300) return brand.sunset;
@@ -956,7 +961,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   const py = imgTop + norm.py;
   const color = actionColor(action.apiName);
   const n = (action.apiName || "").toLowerCase();
-  const isClick = n.includes("click") || n.includes("tap") || n.includes("dblclick");
+  const isClick = isClickAction(action.apiName);
   const isType = n.includes("fill") || n.includes("type") || n.includes("press");
 
   return (
@@ -1638,7 +1643,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
     // Multiple actions can overlap; choose the most recent one at playhead.
     const candidates = traceData.actions.filter(
-      (a) => playhead >= (a.startTime || 0) - 20 && playhead <= (a.endTime || a.startTime || 0) + 20,
+      (a) => playhead >= (a.startTime || 0) - 20 && playhead <= (a.endTime || a.startTime || 0),
     );
     if (!candidates.length) return null;
 
@@ -1649,6 +1654,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       return aStart >= bStart ? a : best;
     }, null);
   }, [playhead, traceData]);
+
+  const overlayAction = useMemo(() => {
+    const action = selectedAction || currentAction;
+    if (!action) return null;
+    if (isClickAction(action.apiName) && playhead >= (action.endTime || action.startTime || 0)) return null;
+    return action;
+  }, [currentAction, playhead, selectedAction]);
 
   const currentGroup = useMemo(() => {
     if (!traceData?.groups) return null;
@@ -2472,7 +2484,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 />
                 {overlayEnabled && (
                   <ActionOverlay
-                    action={selectedAction || currentAction}
+                    action={overlayAction}
                     screenshot={currentScreenshot}
                     viewport={
                       traceData?.contextOptions?.options?.viewport ||
