@@ -2484,7 +2484,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 />
                 {overlayEnabled && (
                   <ActionOverlay
-                    action={selectedAction || currentAction}
+                    action={overlayAction}
                     screenshot={currentScreenshot}
                     viewport={
                       traceData?.contextOptions?.options?.viewport ||
