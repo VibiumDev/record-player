@@ -2584,7 +2584,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             )}
 
             {/* Current action overlay */}
-            {overlayEnabled && playhead > 0 && currentAction && (
+            {overlayEnabled && playhead > 0 && currentAction && (actionFilter === "all" || isHumanAction(currentAction.apiName)) && (
               <div
                 style={{
                   position: "absolute",
