@@ -863,12 +863,21 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
     if (c.ratioMode && !looksRatioPoint) penalty += 10000;
     if (!c.ratioMode && looksRatioPoint) penalty += 2000;
 
-    // Prefer candidates whose effective coordinate basis matches known viewport.
+    // Prefer candidates whose effective coordinate basis matches known viewport/trace ratios.
     if (targetViewport?.width && targetViewport?.height && !c.ratioMode) {
       const effW = c.coordW / c.boost;
       const effH = c.coordH / c.boost;
-      penalty += Math.abs(effW - targetViewport.width) * 0.03;
-      penalty += Math.abs(effH - targetViewport.height) * 0.03;
+      if (explicitCoordinateBases.length) {
+        const basisPenalty = Math.min(
+          ...explicitCoordinateBases.map(
+            (basis) => Math.abs(effW - basis.width) * 0.08 + Math.abs(effH - basis.height) * 0.08,
+          ),
+        );
+        penalty += basisPenalty;
+      } else {
+        penalty += Math.abs(effW - targetViewport.width) * 0.03;
+        penalty += Math.abs(effH - targetViewport.height) * 0.03;
+      }
 
       // No bias toward higher boosts — let the geometric fit decide.
 
