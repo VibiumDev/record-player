@@ -961,7 +961,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   const py = imgTop + norm.py;
   const color = actionColor(action.apiName);
   const n = (action.apiName || "").toLowerCase();
-  const isClick = n.includes("click") || n.includes("tap") || n.includes("dblclick");
+  const isClick = isClickAction(action.apiName);
   const isType = n.includes("fill") || n.includes("type") || n.includes("press");
 
   return (
