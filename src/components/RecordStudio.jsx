@@ -798,16 +798,12 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
 
   // Boost factors help when trace coords are in CSS pixels but screenshot metadata is in device pixels.
   // Only derive from actual measured screenshot/viewport ratios — never hardcode.
-  const measuredBoosts = [];
+  const measuredBoosts = action._coordinateBoosts || [];
   if (targetViewport?.width && screenshot?.width) measuredBoosts.push(screenshot.width / targetViewport.width);
   if (targetViewport?.width && natW) measuredBoosts.push(natW / targetViewport.width);
   if (targetViewport?.height && screenshot?.height) measuredBoosts.push(screenshot.height / targetViewport.height);
   if (targetViewport?.height && natH) measuredBoosts.push(natH / targetViewport.height);
-  const inferredBoosts = Array.from(
-    new Set(
-      [1, ...measuredBoosts.map((b) => Math.round(b))].filter((b) => Number.isFinite(b) && b >= 1 && b <= 4),
-    ),
-  );
+  const inferredBoosts = uniqueBoosts([1, ...measuredBoosts]);
   const rawBoosts = inferredBoosts;
 
   if (screenshot?.width && screenshot?.height) {
