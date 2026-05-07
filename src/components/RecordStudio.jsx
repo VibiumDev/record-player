@@ -730,6 +730,25 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   const pt = action.point;
   const box = action.box;
 
+  // Boost factors help when trace coords are in CSS pixels but screenshot metadata is in device pixels.
+  // Only derive from actual trace/screenshot/viewport ratios — never hardcode.
+  const explicitCoordinateBoosts = uniqueBoosts(action._coordinateBoosts || []);
+  const measuredBoosts = [...explicitCoordinateBoosts];
+  if (targetViewport?.width && screenshot?.width) measuredBoosts.push(screenshot.width / targetViewport.width);
+  if (targetViewport?.width && natW) measuredBoosts.push(natW / targetViewport.width);
+  if (targetViewport?.height && screenshot?.height) measuredBoosts.push(screenshot.height / targetViewport.height);
+  if (targetViewport?.height && natH) measuredBoosts.push(natH / targetViewport.height);
+  const inferredBoosts = uniqueBoosts([1, ...measuredBoosts]);
+  const boostedViewportCandidates = uniqueBoosts([1, ...explicitCoordinateBoosts]);
+  const rawBoosts = inferredBoosts;
+  const explicitCoordinateBases =
+    targetViewport?.width && targetViewport?.height && explicitCoordinateBoosts.length
+      ? explicitCoordinateBoosts.map((boost) => ({
+          width: targetViewport.width / boost,
+          height: targetViewport.height / boost,
+        }))
+      : [];
+
   const addCandidate = (list, coordW, coordH, offsetX, offsetY, source, ratioMode = false, boosts = [1]) => {
     if (!coordW || !coordH || !Number.isFinite(coordW) || !Number.isFinite(coordH)) return;
     for (const boost of boosts) {
@@ -741,7 +760,7 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   const candidates = [];
 
   if (snapshotViewport?.width && snapshotViewport?.height) {
-    addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, 0, 0, "snapshot-viewport");
+    addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, 0, 0, "snapshot-viewport", false, boostedViewportCandidates);
     if (scrollX || scrollY) {
       addCandidate(
         candidates,
@@ -750,6 +769,8 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
         scrollX,
         scrollY,
         "snapshot-viewport-scroll-sub",
+        false,
+        boostedViewportCandidates,
       );
       addCandidate(
         candidates,
@@ -758,6 +779,8 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
         -scrollX,
         -scrollY,
         "snapshot-viewport-scroll-add",
+        false,
+        boostedViewportCandidates,
       );
     }
     addCandidate(candidates, snapshotViewport.width, snapshotViewport.height, 0, 0, "snapshot-viewport-ratio", true);
@@ -795,16 +818,6 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
     }
     addCandidate(candidates, screenshot.width, screenshot.height, 0, 0, "screencast-frame-viewport-ratio", true);
   }
-
-  // Boost factors help when trace coords are in CSS pixels but screenshot metadata is in device pixels.
-  // Only derive from actual measured screenshot/viewport ratios — never hardcode.
-  const measuredBoosts = [...(action._coordinateBoosts || [])];
-  if (targetViewport?.width && screenshot?.width) measuredBoosts.push(screenshot.width / targetViewport.width);
-  if (targetViewport?.width && natW) measuredBoosts.push(natW / targetViewport.width);
-  if (targetViewport?.height && screenshot?.height) measuredBoosts.push(screenshot.height / targetViewport.height);
-  if (targetViewport?.height && natH) measuredBoosts.push(natH / targetViewport.height);
-  const inferredBoosts = uniqueBoosts([1, ...measuredBoosts]);
-  const rawBoosts = inferredBoosts;
 
   if (screenshot?.width && screenshot?.height) {
     addCandidate(candidates, screenshot.width / scaleFactor, screenshot.height / scaleFactor, 0, 0, "screenshot/dpr");
