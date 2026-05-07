@@ -736,19 +736,15 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   }
 
   // Boost factors help when trace coords are in CSS pixels but screenshot metadata is in device pixels.
+  // Only derive from actual measured screenshot/viewport ratios — never hardcode.
+  const measuredBoosts = [];
+  if (targetViewport?.width && screenshot?.width) measuredBoosts.push(screenshot.width / targetViewport.width);
+  if (targetViewport?.width && natW) measuredBoosts.push(natW / targetViewport.width);
+  if (targetViewport?.height && screenshot?.height) measuredBoosts.push(screenshot.height / targetViewport.height);
+  if (targetViewport?.height && natH) measuredBoosts.push(natH / targetViewport.height);
   const inferredBoosts = Array.from(
     new Set(
-      [
-        1,
-        2,
-        3,
-        ...(targetViewport?.width && screenshot?.width ? [Math.round(screenshot.width / targetViewport.width)] : []),
-        ...(targetViewport?.width && natW ? [Math.round(natW / targetViewport.width)] : []),
-        ...(targetViewport?.height && screenshot?.height
-          ? [Math.round(screenshot.height / targetViewport.height)]
-          : []),
-        ...(targetViewport?.height && natH ? [Math.round(natH / targetViewport.height)] : []),
-      ].filter((b) => Number.isFinite(b) && b >= 1 && b <= 4),
+      [1, ...measuredBoosts.map((b) => Math.round(b))].filter((b) => Number.isFinite(b) && b >= 1 && b <= 4),
     ),
   );
   const rawBoosts = inferredBoosts;
@@ -804,9 +800,8 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
       penalty += Math.abs(effW - targetViewport.width) * 0.03;
       penalty += Math.abs(effH - targetViewport.height) * 0.03;
 
-      const inferredMaxBoost = Math.max(...inferredBoosts);
-      if (inferredMaxBoost >= 2 && c.boost === 1) penalty += 120;
-      if (c.boost > 1 && inferredBoosts.includes(c.boost)) penalty -= 120;
+      // No bias toward higher boosts — let the geometric fit decide.
+
     }
 
     let bx, by, bw, bh;
