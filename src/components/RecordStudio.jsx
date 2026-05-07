@@ -510,6 +510,11 @@ function actionColor(apiName) {
   return brand.orange;
 }
 
+function isClickAction(apiName) {
+  const n = (apiName || "").toLowerCase();
+  return n.includes("click") || n.includes("tap") || n.includes("dblclick");
+}
+
 function statusColor(s) {
   if (s >= 400) return "#ef4444";
   if (s >= 300) return brand.sunset;
