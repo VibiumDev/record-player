@@ -5,30 +5,51 @@ const { finiteTimelineTimes, harMonotonicTimeToMs, harSnapshotStartTimeToMs, nor
   __recordStudioInternals;
 
 describe("RecordStudio trace timing", () => {
-  it("converts HAR monotonic seconds to milliseconds", () => {
-    expect(harMonotonicTimeToMs(1777754051.446)).toBe(1777754051446);
+  it("reads HAR monotonic time as raw milliseconds (Playwright-faithful)", () => {
+    // _monotonicTime is relative-ms on the same clock as action startTime/endTime — no scaling.
+    expect(harMonotonicTimeToMs(915)).toBe(915);
     expect(harMonotonicTimeToMs(1777754051446)).toBe(1777754051446);
+    expect(harMonotonicTimeToMs("12")).toBe(12);
+    expect(harMonotonicTimeToMs(NaN)).toBe(0);
+    expect(harMonotonicTimeToMs(undefined)).toBe(0);
   });
 
   it("falls back to startedDateTime for HAR snapshots without monotonic time", () => {
     expect(harSnapshotStartTimeToMs({ startedDateTime: "2026-05-02T20:34:11.446Z" })).toBe(1777754051446);
   });
 
-  it("keeps HAR resource snapshots on the same timeline scale as trace actions", () => {
+  it("keeps HAR resource snapshots on the same timeline scale as trace actions (no 1000x inflation)", () => {
+    // Fresh recording: actions span ~14.1s in relative-ms; a late network request has
+    // _monotonicTime ~915 (relative-ms), NOT seconds.
+    const actionStart = 12;
+    const actionEnd = 14100;
+
     const [entry] = processNetworkEvents([
       {
         type: "resource-snapshot",
         snapshot: {
-          _monotonicTime: 1777754051.446,
-          time: 12,
+          _monotonicTime: 915,
+          time: 43,
           request: { method: "GET", url: "http://localhost:8080/css/styles.css" },
           response: { status: 200, statusText: "OK", content: { mimeType: "text/css", size: 18744 } },
         },
       },
     ]);
 
-    expect(entry.startTime).toBe(1777754051446);
-    expect(entry.endTime).toBe(1777754051458);
+    // Raw ms — not inflated to 915000.
+    expect(entry.startTime).toBe(915);
+    expect(entry.endTime).toBe(958);
+
+    // Network entry sits within the action span, on the same scale.
+    expect(entry.startTime).toBeGreaterThanOrEqual(actionStart);
+    expect(entry.startTime).toBeLessThanOrEqual(actionEnd);
+
+    // Bounds across actions + this network entry ≈ action span (~14.1s), not ~915s.
+    // Mirrors the duration math at RecordStudio.jsx (minTime/maxTime over all timeline times).
+    const allTimes = finiteTimelineTimes([actionStart, actionEnd, entry.startTime, entry.endTime]);
+    const duration = Math.max(0, Math.max(...allTimes) - Math.min(...allTimes));
+    expect(duration).toBe(actionEnd - actionStart); // 14088 ms (~14.1s)
+    expect(duration).toBeLessThan(20000); // sanity: not inflated to ~900s
   });
 
   it("filters non-finite timeline values before calculating bounds", () => {

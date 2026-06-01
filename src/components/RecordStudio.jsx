@@ -122,9 +122,9 @@ function harMonotonicTimeToMs(value) {
   const time = Number(value);
   if (!Number.isFinite(time)) return 0;
 
-  // Playwright/Vibium HAR resource snapshots store _monotonicTime in
-  // seconds, while action/screencast events use milliseconds.
-  return Math.abs(time) > 0 && Math.abs(time) < 10_000_000_000 ? time * 1000 : time;
+  // Playwright/Vibium HAR snapshots store _monotonicTime in relative milliseconds —
+  // the same clock/scale as action startTime/endTime. Return it raw (no scaling).
+  return time;
 }
 
 function harSnapshotStartTimeToMs(snapshot) {
