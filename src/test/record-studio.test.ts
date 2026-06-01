@@ -5,11 +5,16 @@ const { finiteTimelineTimes, harMonotonicTimeToMs, harSnapshotStartTimeToMs, nor
   __recordStudioInternals;
 
 describe("RecordStudio trace timing", () => {
-  it("reads HAR monotonic time as raw milliseconds (Playwright-faithful)", () => {
-    // _monotonicTime is relative-ms on the same clock as action startTime/endTime — no scaling.
+  it("reads HAR monotonic time as ms, rescaling only legacy epoch-seconds", () => {
+    // Relative-ms (Playwright/current recordings, << 1e9) — returned raw, no scaling.
     expect(harMonotonicTimeToMs(915)).toBe(915);
-    expect(harMonotonicTimeToMs(1777754051446)).toBe(1777754051446);
+    expect(harMonotonicTimeToMs(16581)).toBe(16581);
     expect(harMonotonicTimeToMs("12")).toBe(12);
+    // Legacy absolute epoch SECONDS (~1.7e9) — rescaled to epoch-ms so it aligns
+    // with action times. This is the #105 recording shape.
+    expect(harMonotonicTimeToMs(1776351452.493)).toBe(1776351452493);
+    // Absolute epoch MS (>= 1e12) — already ms, left untouched.
+    expect(harMonotonicTimeToMs(1776351452390)).toBe(1776351452390);
     expect(harMonotonicTimeToMs(NaN)).toBe(0);
     expect(harMonotonicTimeToMs(undefined)).toBe(0);
   });

@@ -122,9 +122,13 @@ function harMonotonicTimeToMs(value) {
   const time = Number(value);
   if (!Number.isFinite(time)) return 0;
 
-  // Playwright/Vibium HAR snapshots store _monotonicTime in relative milliseconds —
-  // the same clock/scale as action startTime/endTime. Return it raw (no scaling).
-  return time;
+  // Playwright/current Vibium recordings store _monotonicTime in relative
+  // milliseconds (always << 1e9, same clock/scale as action startTime/endTime),
+  // so it's returned raw. Some legacy Vibium recordings stored it as an absolute
+  // epoch in SECONDS (~1.7e9); rescale only that band to epoch-ms so network
+  // entries align with action times (epoch-ms, >= 1e12) instead of producing a
+  // multi-decade timeline. No valid Playwright trace lands in [1e9, 1e12). (#105)
+  return time >= 1e9 && time < 1e12 ? time * 1000 : time;
 }
 
 function harSnapshotStartTimeToMs(snapshot) {
