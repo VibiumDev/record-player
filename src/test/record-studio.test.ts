@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { __recordStudioInternals } from "../components/RecordStudio";
 
-const { finiteTimelineTimes, harMonotonicTimeToMs, harSnapshotStartTimeToMs, normalizeActionCoords, processNetworkEvents } =
+const {
+  advancePlayheadWithSkip,
+  buildSkipIdleSegments,
+  finiteTimelineTimes,
+  harMonotonicTimeToMs,
+  harSnapshotStartTimeToMs,
+  normalizeActionCoords,
+  processTraceEvents,
+  processNetworkEvents,
+} =
   __recordStudioInternals;
 
 describe("RecordStudio trace timing", () => {
@@ -59,6 +68,69 @@ describe("RecordStudio trace timing", () => {
 
   it("filters non-finite timeline values before calculating bounds", () => {
     expect(finiteTimelineTimes([0, 1, NaN, Infinity, -Infinity, "2"])).toEqual([0, 1, 2]);
+  });
+
+  it("builds skip-idle segments from gaps between recorded activity", () => {
+    const segments = buildSkipIdleSegments(
+      {
+        duration: 10700,
+        actions: [
+          { startTime: 0, endTime: 250 },
+          { startTime: 10500, endTime: 10700 },
+        ],
+        screenshots: [{ time: 300 }, { time: 10300 }],
+        console: [{ time: 500 }],
+        network: [],
+        groups: [],
+      },
+      { thresholdMs: 2000, paddingMs: 300 },
+    );
+
+    expect(segments).toEqual([{ start: 800, end: 10000, duration: 9200 }]);
+  });
+
+  it("does not skip across DOM snapshot activity", () => {
+    const segments = buildSkipIdleSegments(
+      {
+        duration: 10700,
+        actions: [
+          { startTime: 0, endTime: 250 },
+          { startTime: 10500, endTime: 10700 },
+        ],
+        domSnapshots: [{ time: 5200 }],
+        screenshots: [],
+        console: [],
+        network: [],
+        groups: [],
+      },
+      { thresholdMs: 2000, paddingMs: 300 },
+    );
+
+    expect(segments).toEqual([
+      { start: 550, end: 4900, duration: 4350 },
+      { start: 5500, end: 10200, duration: 4700 },
+    ]);
+  });
+
+  it("preserves frame-snapshot timestamps as DOM activity", () => {
+    const { domSnapshots } = processTraceEvents([
+      {
+        type: "frame-snapshot",
+        timestamp: 5200,
+        snapshotName: "after-click",
+        pageId: "page@1",
+      },
+    ]);
+
+    expect(domSnapshots).toEqual([{ time: 5200, pageId: "page@1", name: "after-click" }]);
+  });
+
+  it("advances over skipped idle time without spending playback time inside it", () => {
+    const segments = [{ start: 2000, end: 10000, duration: 8000 }];
+
+    expect(advancePlayheadWithSkip(1900, 2100, segments)).toBe(10100);
+    expect(advancePlayheadWithSkip(5000, 5200, segments)).toBe(10200);
+    expect(advancePlayheadWithSkip(11000, 11200, segments)).toBe(11200);
   });
 
   it("uses inferred action coordinate boost for viewport-sized screenshots", () => {

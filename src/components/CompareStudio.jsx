@@ -44,6 +44,7 @@ export default function CompareStudio() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
+  const [skipIdle, setSkipIdle] = useState(false);
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [playhead, setPlayhead] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -55,6 +56,7 @@ export default function CompareStudio() {
   const V = useMemo(() => ({ ...brand, ...(dark ? darkSurface : lightSurface) }), [dark]);
 
   const bothLoaded = leftFile && rightFile;
+  const both = useCallback((fn) => { fn(leftRef.current); fn(rightRef.current); }, []);
 
   // Poll playhead from left player to keep shared display in sync
   useEffect(() => {
@@ -72,9 +74,12 @@ export default function CompareStudio() {
     return () => cancelAnimationFrame(pollRef.current);
   }, [bothLoaded]);
 
-  // Shared control helpers
-  const both = (fn) => { fn(leftRef.current); fn(rightRef.current); };
+  useEffect(() => {
+    if (!bothLoaded) return;
+    both((r) => r?.setSkipIdle?.(skipIdle));
+  }, [both, bothLoaded, skipIdle]);
 
+  // Shared control helpers
   const togglePlay = () => {
     both((r) => r?.togglePlay?.());
   };
@@ -92,6 +97,11 @@ export default function CompareStudio() {
     const next = !loop;
     setLoop(next);
     both((r) => r?.setLoop?.(next));
+  };
+  const toggleSkipIdle = () => {
+    const next = !skipIdle;
+    setSkipIdle(next);
+    both((r) => r?.setSkipIdle?.(next));
   };
 
   const handleDrop = useCallback((side) => (e) => {
@@ -329,6 +339,26 @@ export default function CompareStudio() {
             }}
           >
         ⟲
+          </button>
+          <button
+            onClick={toggleSkipIdle}
+            title="Skip idle"
+            aria-label="Skip idle"
+            aria-pressed={skipIdle}
+            style={{
+              background: skipIdle ? V.orange + "18" : "none",
+              border: skipIdle ? `1px solid ${V.orange}40` : "1px solid transparent",
+              color: skipIdle ? V.orange : V.textDim,
+              cursor: "pointer",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 700,
+              outline: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Skip idle
           </button>
           <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
           <button
