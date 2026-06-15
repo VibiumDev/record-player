@@ -36,7 +36,14 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
   const showInspector = optionVisible(inspector);
   const showTimeline = optionVisible(timeline);
   const events = recording.timeline.events;
-  const firstScreenshot = recording.timeline.screenshots.find((screenshot) => screenshot.dataUrl);
+  const screenshots = useMemo(() => recording.timeline.screenshots.filter((screenshot) => screenshot.dataUrl), [recording.timeline.screenshots]);
+  const duration = Math.max(0, recording.timeline.duration || 0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const currentScreenshot = useMemo(() => {
+    if (!screenshots.length) return undefined;
+    return screenshots.reduce((current, screenshot) => (screenshot.time <= currentTime ? screenshot : current), screenshots[0]);
+  }, [currentTime, screenshots]);
   const counts = useMemo(
     () =>
       events.reduce<Record<string, number>>((acc, event) => {
@@ -45,6 +52,32 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
       }, {}),
     [events],
   );
+
+  useEffect(() => {
+    setCurrentTime(0);
+    setPlaying(false);
+  }, [recording]);
+
+  useEffect(() => {
+    if (!playing) return;
+    const startedAt = performance.now();
+    const initialTime = currentTime;
+    const interval = window.setInterval(() => {
+      setCurrentTime(() => {
+        const next = Math.min(duration, initialTime + performance.now() - startedAt);
+        if (next >= duration) {
+          window.clearInterval(interval);
+          setPlaying(false);
+        }
+        return next;
+      });
+    }, 100);
+    return () => window.clearInterval(interval);
+  }, [currentTime, duration, playing]);
+
+  const seek = (value: number) => {
+    setCurrentTime(Math.min(duration, Math.max(0, value)));
+  };
 
   return (
     <section
@@ -79,10 +112,46 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
         </div>
       </header>
 
-      {firstScreenshot?.dataUrl ? (
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "16px 0 0", flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={() => {
+            if (duration > 0 && currentTime >= duration) seek(0);
+            setPlaying((value) => !value);
+          }}
+          aria-label={playing ? "Pause recording" : "Play recording"}
+          style={{
+            border: "1px solid #1f2937",
+            borderRadius: 999,
+            background: "#172033",
+            color: "#ffffff",
+            cursor: "pointer",
+            fontWeight: 700,
+            padding: "8px 16px",
+          }}
+        >
+          {playing ? "❚❚ Pause" : "▶ Play"}
+        </button>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 260px", minWidth: 0, fontSize: 13, color: "#5f6b7a" }}>
+          <span>{formatMs(currentTime)}</span>
+          <input
+            aria-label="Playback position"
+            type="range"
+            min={0}
+            max={duration || 0}
+            step={100}
+            value={Math.min(currentTime, duration || 0)}
+            onChange={(event) => seek(Number(event.currentTarget.value))}
+            style={{ flex: "1 1 auto", minWidth: 120 }}
+          />
+          <span>{formatMs(duration)}</span>
+        </label>
+      </div>
+
+      {currentScreenshot?.dataUrl ? (
         <figure style={{ margin: "16px 0", border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden" }}>
-          <img src={firstScreenshot.dataUrl} alt="First recording screenshot" style={{ display: "block", width: "100%", maxHeight: 420, objectFit: "contain", background: "#101419" }} />
-          <figcaption style={{ padding: 8, fontSize: 12, color: "#5f6b7a" }}>Screenshot at {formatMs(firstScreenshot.time)}</figcaption>
+          <img src={currentScreenshot.dataUrl} alt="Current recording screenshot" style={{ display: "block", width: "100%", maxHeight: 420, objectFit: "contain", background: "#101419" }} />
+          <figcaption style={{ padding: 8, fontSize: 12, color: "#5f6b7a" }}>Screenshot at {formatMs(currentScreenshot.time)}</figcaption>
         </figure>
       ) : null}
 

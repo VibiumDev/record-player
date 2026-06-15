@@ -1,0 +1,54 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { RecordPlayer } from "../packages/player-react";
+import type { LoadedRecording } from "../packages/player-core";
+
+function recording(): LoadedRecording {
+  return {
+    version: 1,
+    source: "sample.zip",
+    files: ["trace.trace", "resources/page.jpeg"],
+    metadata: {
+      fileCount: 2,
+      eventCount: 2,
+      traceEventCount: 2,
+      networkEventCount: 0,
+    },
+    timeline: {
+      startTime: 0,
+      endTime: 1000,
+      duration: 1000,
+      events: [
+        { id: "event-1", kind: "action", type: "click", title: "Click button", time: 0, data: {} },
+        { id: "event-2", kind: "screenshot", type: "screencast-frame", title: "Frame", time: 1000, data: {} },
+      ],
+      screenshots: [
+        { id: "screenshot-1", sha1: "first", time: 0, mimeType: "image/jpeg", dataUrl: "data:image/jpeg;base64,first" },
+        { id: "screenshot-2", sha1: "second", time: 1000, mimeType: "image/jpeg", dataUrl: "data:image/jpeg;base64,second" },
+      ],
+    },
+    raw: { traceEvents: [], networkEvents: [] },
+  };
+}
+
+describe("RecordPlayer", () => {
+  it("shows playback controls and toggles play state", () => {
+    render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
+
+    const play = screen.getByRole("button", { name: "Play recording" });
+    expect(play).toBeInTheDocument();
+
+    fireEvent.click(play);
+
+    expect(screen.getByRole("button", { name: "Pause recording" })).toBeInTheDocument();
+  });
+
+  it("seeks to screenshots with the playback slider", () => {
+    render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
+
+    fireEvent.change(screen.getByRole("slider", { name: "Playback position" }), { target: { value: "1000" } });
+
+    expect(screen.getByText("Screenshot at 1.00s")).toBeInTheDocument();
+    expect(screen.getByAltText("Current recording screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,second");
+  });
+});
