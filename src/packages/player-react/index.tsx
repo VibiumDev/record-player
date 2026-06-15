@@ -47,18 +47,32 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
   );
 
   return (
-    <section className={className} style={{ fontFamily: "system-ui, sans-serif", color: "#172033", ...style }}>
-      <header style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "baseline" }}>
-        <div>
+    <section
+      className={className}
+      style={{
+        boxSizing: "border-box",
+        width: "100%",
+        maxWidth: "100%",
+        overflow: "hidden",
+        padding: 16,
+        borderRadius: 8,
+        background: "#ffffff",
+        fontFamily: "system-ui, sans-serif",
+        color: "#172033",
+        ...style,
+      }}
+    >
+      <header style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "baseline", minWidth: 0 }}>
+        <div style={{ minWidth: 0 }}>
           <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Vibium Record Player</h2>
-          <div style={{ color: "#5f6b7a", fontSize: 13 }}>
+          <div style={{ color: "#5f6b7a", fontSize: 13, overflowWrap: "anywhere" }}>
             {recording.source ? `${recording.source} · ` : ""}
             {recording.metadata.fileCount} files · {recording.metadata.eventCount} events · {formatMs(recording.timeline.duration)}
           </div>
         </div>
-        <div aria-label="event counts" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <div aria-label="event counts" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 }}>
           {Object.entries(counts).map(([kind, count]) => (
-            <span key={kind} style={{ border: "1px solid #d7dce3", borderRadius: 999, padding: "2px 8px", fontSize: 12 }}>
+            <span key={kind} style={{ border: "1px solid #d7dce3", borderRadius: 999, padding: "2px 8px", fontSize: 12, whiteSpace: "nowrap" }}>
               {kind}: {count}
             </span>
           ))}
@@ -99,10 +113,21 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
           <div style={{ padding: "8px 12px", background: "#f8fafc", fontWeight: 600 }}>Events</div>
           <ol style={{ margin: 0, padding: 0, listStyle: "none", maxHeight: 360, overflow: "auto" }}>
             {events.slice(0, 200).map((event) => (
-              <li key={event.id} style={{ display: "grid", gridTemplateColumns: "90px 90px 1fr", gap: 8, padding: "8px 12px", borderTop: "1px solid #edf1f7", fontSize: 13 }}>
+              <li
+                key={event.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "90px 90px minmax(0, 1fr)",
+                  gap: 8,
+                  padding: "8px 12px",
+                  borderTop: "1px solid #edf1f7",
+                  fontSize: 13,
+                  minWidth: 0,
+                }}
+              >
                 <time>{formatMs(event.time)}</time>
                 <span>{event.kind}</span>
-                <span>{event.title ?? event.method ?? event.type ?? event.id}</span>
+                <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{event.title ?? event.method ?? event.type ?? event.id}</span>
               </li>
             ))}
           </ol>
