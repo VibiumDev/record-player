@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { __recordStudioInternals } from "../components/RecordStudio";
 
@@ -14,6 +16,13 @@ const {
   __recordStudioInternals;
 
 describe("RecordStudio trace timing", () => {
+  it("uses the bundled JSZip dependency instead of loading JSZip from a runtime CDN", async () => {
+    const source = await readFile(resolve(process.cwd(), "src/components/RecordStudio.jsx"), "utf8");
+
+    expect(source).toMatch(/from "jszip"/);
+    expect(source).not.toContain("cdnjs.cloudflare.com/ajax/libs/jszip");
+  });
+
   it("reads HAR monotonic time as ms, rescaling only legacy epoch-seconds", () => {
     // Relative-ms (Playwright/current recordings, << 1e9) — returned raw, no scaling.
     expect(harMonotonicTimeToMs(915)).toBe(915);

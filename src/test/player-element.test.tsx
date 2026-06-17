@@ -1,4 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { act, screen, waitFor } from "@testing-library/react";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { defineVibiumRecordPlayerElement } from "../packages/player-element";
 
 function okZipResponse() {
@@ -12,11 +15,47 @@ describe("player-element", () => {
     vi.restoreAllMocks();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("defines the custom element idempotently", () => {
     const first = defineVibiumRecordPlayerElement();
     const second = defineVibiumRecordPlayerElement();
     expect(second).toBe(first);
     expect(customElements.get("vibium-record-player")).toBe(first);
+  });
+
+  it("renders the player and dispatches a ready event for a valid recording", async () => {
+    defineVibiumRecordPlayerElement();
+    const data = await readFile(resolve(process.cwd(), "public/vibium-demo-record.zip"));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(data, { status: 200, statusText: "OK" })));
+    const readyHandler = vi.fn();
+
+    const element = document.createElement("vibium-record-player");
+    element.setAttribute("src", "https://example.test/record.zip");
+    element.addEventListener("vibium-player-ready", readyHandler);
+
+    act(() => {
+      document.body.appendChild(element);
+    });
+
+    expect(await screen.findByRole("button", { name: "Play recording" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(readyHandler).toHaveBeenCalledTimes(1);
+    });
+
+    const detail = readyHandler.mock.calls[0][0].detail;
+    expect(detail.recording.version).toBe(1);
+    expect(detail.recording.timeline.events.length).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenCalledWith("https://example.test/record.zip", {
+      credentials: "same-origin",
+      signal: expect.any(AbortSignal),
+    });
+
+    act(() => {
+      document.body.removeChild(element);
+    });
   });
 
   it("upgrades and dispatches an error event when loading fails", async () => {

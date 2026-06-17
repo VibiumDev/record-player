@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
+import JSZip from "jszip";
 
 /*
   Vibium Player — player.vibium.dev
@@ -8,18 +9,14 @@ import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImper
   files and extracts screenshots from resources.
 */
 
-// We'll load JSZip from CDN at runtime
+// Prefer an explicitly injected global (tests and embedding pages can set
+// window.JSZip), otherwise use the bundled dependency so the player has no
+// runtime CDN requirement.
 let JSZipLoaded = null;
 function loadJSZip() {
   if (JSZipLoaded) return JSZipLoaded;
-  JSZipLoaded = new Promise((resolve, reject) => {
-    if (window.JSZip) return resolve(window.JSZip);
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-    s.onload = () => resolve(window.JSZip);
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
+  const injected = typeof window !== "undefined" ? window.JSZip : undefined;
+  JSZipLoaded = Promise.resolve(injected || JSZip);
   return JSZipLoaded;
 }
 

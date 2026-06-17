@@ -113,6 +113,10 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function numberFrom(...values: unknown[]): number | undefined {
   for (const value of values) {
+    // Skip empty values: Number(null), Number(""), and Number("  ") all coerce
+    // to 0, which would otherwise masquerade as a real timeline time of 0.
+    if (value == null) continue;
+    if (typeof value === "string" && value.trim() === "") continue;
     const n = Number(value);
     if (Number.isFinite(n)) return n;
   }

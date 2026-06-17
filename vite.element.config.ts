@@ -13,6 +13,9 @@ export default defineConfig({
     },
   },
   build: {
+    // The element bundle ships only the compiled component, not the hosted
+    // app's demo recordings under public/.
+    copyPublicDir: false,
     lib: {
       entry: path.resolve(__dirname, "src/packages/player-element/register.ts"),
       formats: ["es"],

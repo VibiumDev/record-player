@@ -23,7 +23,7 @@ function visibilityAttribute(value: string | null): boolean | "visible" | "hidde
 
 export class VibiumRecordPlayerElement extends HTMLElement {
   static get observedAttributes() {
-    return ["src", "inspector", "timeline", "storage-key"];
+    return ["src", "inspector", "timeline"];
   }
 
   private root: Root | null = null;
@@ -52,7 +52,6 @@ export class VibiumRecordPlayerElement extends HTMLElement {
     const src = this.getAttribute("src");
     const inspector = visibilityAttribute(this.getAttribute("inspector"));
     const timeline = visibilityAttribute(this.getAttribute("timeline"));
-    const storageKey = this.getAttribute("storage-key") ?? undefined;
 
     if (!src) {
       this.root.render(<div role="alert">Missing recording src</div>);
@@ -65,7 +64,6 @@ export class VibiumRecordPlayerElement extends HTMLElement {
         src={src}
         inspector={inspector}
         timeline={timeline}
-        storageKey={storageKey}
         onReady={(recording) => {
           const detail: VibiumRecordPlayerReadyDetail = { recording };
           this.dispatchEvent(
