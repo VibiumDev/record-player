@@ -143,6 +143,91 @@ function finiteTimelineTimes(times) {
   return times.map((t) => Number(t)).filter(Number.isFinite);
 }
 
+const DEFAULT_SKIP_IDLE_THRESHOLD_MS = 2000;
+const DEFAULT_SKIP_IDLE_PADDING_MS = 300;
+
+function buildSkipIdleSegments(traceData, options = {}) {
+  const thresholdMs = Number(options.thresholdMs ?? DEFAULT_SKIP_IDLE_THRESHOLD_MS);
+  const paddingMs = Number(options.paddingMs ?? DEFAULT_SKIP_IDLE_PADDING_MS);
+  const duration = Number(traceData?.duration);
+  if (!Number.isFinite(duration) || duration <= 0) return [];
+
+  const activityTimes = finiteTimelineTimes([
+    0,
+    duration,
+    ...(traceData?.actions || []).flatMap((a) => [a.startTime, a.endTime]),
+    ...(traceData?.network || []).flatMap((n) => [n.startTime, n.endTime]),
+    ...(traceData?.console || []).map((c) => c.time),
+    ...(traceData?.domSnapshots || []).map((s) => s.time),
+    ...(traceData?.traceEvents || []).map((e) => e.time),
+    ...(traceData?.screenshots || []).map((s) => s.time),
+    ...(traceData?.groups || []).flatMap((g) => [g.startTime, g.endTime]),
+  ])
+    .filter((time) => time >= 0 && time <= duration)
+    .sort((a, b) => a - b);
+
+  const uniqueTimes = [];
+  for (const time of activityTimes) {
+    if (uniqueTimes.length === 0 || Math.abs(time - uniqueTimes[uniqueTimes.length - 1]) > 0.5) {
+      uniqueTimes.push(time);
+    }
+  }
+
+  if (!Number.isFinite(thresholdMs) || thresholdMs <= 0 || uniqueTimes.length < 2) return [];
+  const safePaddingMs = Number.isFinite(paddingMs) && paddingMs > 0 ? paddingMs : 0;
+  const segments = [];
+
+  for (let i = 1; i < uniqueTimes.length; i++) {
+    const prev = uniqueTimes[i - 1];
+    const next = uniqueTimes[i];
+    const gap = next - prev;
+    if (gap <= thresholdMs) continue;
+
+    const start = Math.min(duration, Math.max(0, prev + safePaddingMs));
+    const end = Math.max(0, Math.min(duration, next - safePaddingMs));
+    if (end > start) {
+      segments.push({ start, end, duration: end - start });
+    }
+  }
+
+  return segments;
+}
+
+function advancePlayheadWithSkip(from, to, skipSegments = []) {
+  const start = Number(from);
+  const target = Number(to);
+  if (!Number.isFinite(start) || !Number.isFinite(target)) return 0;
+  if (target <= start || !skipSegments.length) return target;
+
+  let current = start;
+  let remaining = target - start;
+
+  for (const segment of skipSegments) {
+    const segmentStart = Number(segment?.start);
+    const segmentEnd = Number(segment?.end);
+    if (!Number.isFinite(segmentStart) || !Number.isFinite(segmentEnd) || segmentEnd <= segmentStart) continue;
+    if (current >= segmentEnd) continue;
+
+    if (current < segmentStart) {
+      const activeTimeBeforeSegment = segmentStart - current;
+      if (remaining < activeTimeBeforeSegment) return current + remaining;
+      current = segmentStart;
+      remaining -= activeTimeBeforeSegment;
+    }
+
+    if (current >= segmentStart && current < segmentEnd) {
+      current = segmentEnd;
+    }
+  }
+
+  return current + remaining;
+}
+
+function traceEventTime(evt) {
+  const time = Number(evt?.timestamp ?? evt?.time ?? evt?.startTime ?? evt?.endTime ?? evt?.params?.timestamp);
+  return Number.isFinite(time) ? time : NaN;
+}
+
 function uniqueBoosts(values) {
   return Array.from(
     new Set(
@@ -211,6 +296,8 @@ function processTraceEvents(events) {
   const actionMap = new Map();
   const groups = [];
   const groupCallIds = new Set();
+  const domSnapshots = [];
+  const traceEvents = [];
   // Map snapshot name/id → metadata (viewport, scroll offsets)
   const snapshotMetaMap = new Map();
   const snapshotMetaList = [];
@@ -245,6 +332,7 @@ function processTraceEvents(events) {
     // Parse frame-snapshot for viewport & scroll metadata
     if (type === "frame-snapshot") {
       const nestedSnapshot = evt.snapshot && typeof evt.snapshot === "object" ? evt.snapshot : null;
+      const snapshotTime = traceEventTime(evt);
       const meta = {
         viewport:
           normalizeViewport(evt.viewport) ||
@@ -271,7 +359,7 @@ function processTraceEvents(events) {
               0,
           ) || 0,
         pageId: evt.pageId || evt.frameId || nestedSnapshot?.pageId || nestedSnapshot?.frameId || null,
-        time: Number(evt.timestamp ?? evt.time ?? evt.startTime ?? 0) || 0,
+        time: Number.isFinite(snapshotTime) ? snapshotTime : 0,
       };
 
       // Register all likely snapshot id aliases
@@ -289,6 +377,13 @@ function processTraceEvents(events) {
       for (const a of aliases) setSnapshotAlias(a, meta);
 
       snapshotMetaList.push(meta);
+      if (Number.isFinite(snapshotTime)) {
+        domSnapshots.push({
+          time: snapshotTime,
+          pageId: meta.pageId,
+          name: evt.snapshotName || evt.snapshotId || evt.name || nestedSnapshot?.name || nestedSnapshot?.id || "",
+        });
+      }
       continue;
     }
 
@@ -364,6 +459,17 @@ function processTraceEvents(events) {
       continue;
     }
 
+    if (type === "event") {
+      const time = traceEventTime(evt);
+      if (Number.isFinite(time)) {
+        traceEvents.push({
+          time,
+          method: evt.method || "",
+        });
+      }
+      continue;
+    }
+
     // Screencast frames
     if (type === "screencast-frame") {
       screenshotRefs.push({
@@ -417,6 +523,8 @@ function processTraceEvents(events) {
 
   actions.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
   consoleEvents.sort((a, b) => (a.time || 0) - (b.time || 0));
+  domSnapshots.sort((a, b) => (a.time || 0) - (b.time || 0));
+  traceEvents.sort((a, b) => (a.time || 0) - (b.time || 0));
   screenshotRefs.sort((a, b) => (a.time || 0) - (b.time || 0));
 
   // Derive fallback viewport from first screencast-frame dimensions
@@ -430,7 +538,7 @@ function processTraceEvents(events) {
 
   inferActionCoordinateBoosts(actions, fallbackViewport);
 
-  return { actions, consoleEvents, contextOptions, screenshotRefs, groups, snapshotMetaMap, fallbackViewport };
+  return { actions, consoleEvents, contextOptions, screenshotRefs, groups, domSnapshots, traceEvents, snapshotMetaMap, fallbackViewport };
 }
 
 // ─── Parse network events (BiDi format) ─────────────────────────────────────
@@ -1131,6 +1239,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const [zoom, setZoom] = useState(1);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
+  const [skipIdle, setSkipIdle] = useState(getPanelDefault("skip-idle", false));
   const [selectedAction, setSelectedAction] = useState(null);
   const [selectedConsoleEvent, setSelectedConsoleEvent] = useState(null);
   const [actionFilter, setActionFilter] = useState("human");
@@ -1167,10 +1276,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     setPlayhead: (t) => setPlayhead(t),
     setSpeed: (s) => setSpeed(s),
     setLoop: (l) => setLoop(l),
+    setSkipIdle: (enabled) => setSkipIdle(enabled),
     goToStart: () => { setPlayhead(0); setIsPlaying(false); },
     goToEnd: () => { if (traceData) { setPlayhead(traceData.duration); setIsPlaying(false); } },
-    getState: () => ({ playhead, isPlaying, speed, loop, duration: traceData?.duration || 0 }),
-  }), [playhead, isPlaying, speed, loop, traceData]);
+    getState: () => ({ playhead, isPlaying, speed, loop, skipIdle, duration: traceData?.duration || 0 }),
+  }), [playhead, isPlaying, speed, loop, skipIdle, traceData]);
 
 
   // Detect if footer has room for stats
@@ -1389,7 +1499,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         }
       }
 
-      const { actions, consoleEvents, contextOptions, screenshotRefs, groups } = processTraceEvents(allEvents);
+      const { actions, consoleEvents, contextOptions, screenshotRefs, groups, domSnapshots, traceEvents } = processTraceEvents(allEvents);
       const network = processNetworkEvents(networkEvents);
 
       // Resolve screenshot refs to data URIs
@@ -1399,11 +1509,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
       // Calculate timeline bounds
       const allTimes = [
-        ...actions.flatMap((a) => [a.startTime, a.endTime].filter(Boolean)),
-        ...network.flatMap((n) => [n.startTime, n.endTime].filter(Boolean)),
-        ...consoleEvents.map((c) => c.time).filter(Boolean),
-        ...screenshotRefs.map((s) => s.time).filter(Boolean),
-        ...groups.flatMap((g) => [g.startTime, g.endTime].filter(Boolean)),
+        ...actions.flatMap((a) => [a.startTime, a.endTime]),
+        ...network.flatMap((n) => [n.startTime, n.endTime]),
+        ...consoleEvents.map((c) => c.time),
+        ...domSnapshots.map((s) => s.time),
+        ...traceEvents.map((e) => e.time),
+        ...screenshotRefs.map((s) => s.time),
+        ...groups.flatMap((g) => [g.startTime, g.endTime]),
       ];
       const finiteTimes = finiteTimelineTimes(allTimes);
 
@@ -1415,7 +1527,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         return Number.isFinite(time) ? time - minTime : 0;
       };
 
-      setTraceData({
+      const normalizedTraceData = {
         actions: actions.map((a) => ({
           ...a,
           startTime: normalize(a.startTime),
@@ -1429,6 +1541,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           duration: Math.round((n.endTime || n.startTime || 0) - (n.startTime || 0)),
         })),
         console: consoleEvents.map((c) => ({ ...c, time: normalize(c.time) })),
+        domSnapshots: domSnapshots.map((s) => ({ ...s, time: normalize(s.time) })),
+        traceEvents: traceEvents.map((e) => ({ ...e, time: normalize(e.time) })),
         screenshots: resolvedScreenshots
           .map((s) => ({ ...s, time: normalize(s.time) }))
           .sort((a, b) => a.time - b.time),
@@ -1443,7 +1557,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         duration,
         fileCount: files.length,
         eventCount: allEvents.length,
-      });
+      };
+      normalizedTraceData.skipIdleSegments = buildSkipIdleSegments(normalizedTraceData);
+      setTraceData(normalizedTraceData);
       setSelectedAction(null);
       setSelectedConsoleEvent(null);
 
@@ -1484,6 +1600,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       localStorage.setItem("record-panel-controls", showToolbar);
     } catch {}
   }, [showToolbar]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("record-panel-skip-idle", skipIdle);
+    } catch {}
+  }, [skipIdle]);
   useEffect(() => {
     try {
       localStorage.setItem("record-panel-layout", layoutMode);
@@ -1535,15 +1656,18 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   // ─── Playback ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isPlaying || !traceData) return;
-    let startTime = performance.now();
-    let startPos = playhead;
+    let lastTime = performance.now();
+    let currentPos = playhead;
     const tick = (now) => {
-      let newPos = startPos + (now - startTime) * speed;
+      const elapsed = (now - lastTime) * speed;
+      lastTime = now;
+      let newPos = currentPos + elapsed;
+      if (skipIdle) {
+        newPos = advancePlayheadWithSkip(currentPos, newPos, traceData.skipIdleSegments || []);
+      }
       if (newPos >= traceData.duration) {
         if (loop) {
-          // Reset origin and keep going
-          startPos = 0;
-          startTime = now;
+          currentPos = 0;
           newPos = 0;
         } else {
           setPlayhead(traceData.duration);
@@ -1551,12 +1675,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           return;
         }
       }
+      currentPos = newPos;
       setPlayhead(newPos);
       playRef.current = requestAnimationFrame(tick);
     };
     playRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(playRef.current);
-  }, [isPlaying, traceData, speed, loop]);
+  }, [isPlaying, traceData, speed, loop, skipIdle]);
 
   // ─── Auto-scroll timeline to keep playhead visible ─────────────────────
   useEffect(() => {
@@ -2071,6 +2196,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
   // ─── Main viewer ──────────────────────────────────────────────────────
   const D = traceData.duration || 1;
+  const skipIdleSegments = traceData.skipIdleSegments || [];
+  const skipIdleSavedMs = skipIdleSegments.reduce((sum, segment) => sum + (Number(segment.duration) || 0), 0);
+  const skipIdleTitle = skipIdleSegments.length
+    ? `Skip idle (${fmt(skipIdleSavedMs)} skippable)`
+    : "Skip idle";
 
   return (
     <div
@@ -2273,6 +2403,28 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 </button>
               </>
             )}
+            <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
+            <button
+              onClick={() => setSkipIdle((enabled) => !enabled)}
+              title={skipIdleTitle}
+              aria-label="Skip idle"
+              aria-pressed={skipIdle}
+              style={{
+                background: skipIdle ? V.orange + "18" : "none",
+                border: skipIdle ? `1px solid ${V.orange}40` : "1px solid transparent",
+                color: skipIdle ? V.orange : V.textDim,
+                cursor: "pointer",
+                padding: mobile ? "3px 6px" : "3px 8px",
+                borderRadius: 6,
+                fontSize: mobile ? 11 : 13,
+                fontWeight: 700,
+                outline: "none",
+                whiteSpace: "nowrap",
+                lineHeight: 1.2,
+              }}
+            >
+              {mobile ? "Skip" : "Skip idle"}
+            </button>
           </div>
 
           <div
@@ -4475,11 +4627,14 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 });
 
 export const __recordStudioInternals = {
+  advancePlayheadWithSkip,
+  buildSkipIdleSegments,
   finiteTimelineTimes,
   harMonotonicTimeToMs,
   harSnapshotStartTimeToMs,
   inferActionCoordinateBoosts,
   normalizeActionCoords,
+  processTraceEvents,
   processNetworkEvents,
 };
 
