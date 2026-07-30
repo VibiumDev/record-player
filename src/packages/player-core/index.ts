@@ -194,6 +194,42 @@ function normalizeEvent(raw: unknown, index: number): RecordingEvent {
   };
 }
 
+// Vibium/Playwright traces split each call into before/input/after lines that
+// share a callId; only "before" carries a start time and only "after" carries
+// an end time. Fold them into the opening event so a call is one action with
+// a real duration instead of three events, two of which have no usable time.
+function mergeCallLifecycles(events: RecordingEvent[]): RecordingEvent[] {
+  const merged: RecordingEvent[] = [];
+  const openByCallId = new Map<string, RecordingEvent>();
+  for (const event of events) {
+    const callId = asRecord(event.data).callId;
+    if (typeof callId !== "string" || callId === "") {
+      merged.push(event);
+      continue;
+    }
+    if (event.type === "before") {
+      openByCallId.set(callId, event);
+      merged.push(event);
+      continue;
+    }
+    const opener = event.type === "after" || event.type === "input" ? openByCallId.get(callId) : undefined;
+    if (!opener) {
+      merged.push(event);
+      continue;
+    }
+    if (event.type === "after") {
+      if (event.endTime != null) {
+        opener.endTime = event.endTime;
+        opener.duration = Math.max(0, event.endTime - opener.time);
+      }
+      opener.data = { ...opener.data, after: event.data };
+    } else {
+      opener.data = { ...opener.data, input: event.data };
+    }
+  }
+  return merged;
+}
+
 function extractScreenshotRefs(events: unknown[], resources: Map<string, { mimeType: string; dataUrl?: string }>): ScreenshotIndex[] {
   const screenshots: ScreenshotIndex[] = [];
   events.forEach((raw, index) => {
@@ -288,7 +324,7 @@ export async function parseRecording(
     const networkEvents = await readEvents(files, zip.files, ".network");
     const resources = await readResources(files, zip.files, options.includeResourceDataUrls ?? true);
     const allRawEvents = [...traceEvents, ...networkEvents].filter(isTimelineEvent);
-    const events = allRawEvents.map(normalizeEvent);
+    const events = mergeCallLifecycles(allRawEvents.map(normalizeEvent));
     const screenshots = extractScreenshotRefs(traceEvents, resources);
     const contextOptions = traceEvents.map(asRecord).find((event) => event.type === "context-options");
 
