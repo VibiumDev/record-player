@@ -133,7 +133,18 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
           {playing ? "❚❚ Pause" : "▶ Play"}
         </button>
         <label style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 260px", minWidth: 0, fontSize: 13, color: "#5f6b7a" }}>
-          <span>{formatMs(currentTime)}</span>
+          {/* Reserve the width of the widest label (the formatted duration) so
+              the flexed slider's geometry stays fixed while time advances. */}
+          <span
+            style={{
+              width: `${formatMs(duration).length}ch`,
+              textAlign: "right",
+              fontVariantNumeric: "tabular-nums",
+              flexShrink: 0,
+            }}
+          >
+            {formatMs(currentTime)}
+          </span>
           <input
             aria-label="Playback position"
             type="range"

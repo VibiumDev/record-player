@@ -43,6 +43,20 @@ describe("RecordPlayer", () => {
     expect(screen.getByRole("button", { name: "Pause recording" })).toBeInTheDocument();
   });
 
+  it("reserves a fixed-width elapsed label so the slider does not resize during playback", () => {
+    render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
+
+    // Widest possible label for this recording is the formatted duration
+    // ("1.00s" = 5 characters); the elapsed label must hold that width from
+    // the start or the flexed slider re-lays-out on every tick.
+    const elapsed = screen.getByText("0ms");
+    expect(elapsed).toHaveStyle({
+      width: "5ch",
+      textAlign: "right",
+      fontVariantNumeric: "tabular-nums",
+    });
+  });
+
   it("seeks to screenshots with the playback slider", () => {
     render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
 
