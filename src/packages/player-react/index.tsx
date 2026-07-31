@@ -128,9 +128,18 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
             cursor: "pointer",
             fontWeight: 700,
             padding: "8px 16px",
+            display: "grid",
+            justifyItems: "center",
           }}
         >
-          {playing ? "❚❚ Pause" : "▶ Play"}
+          {/* Both labels stay in the layout, stacked in one grid cell, so the
+              button (and the slider row it shares) never resizes on toggle. */}
+          <span aria-hidden={!playing} style={{ gridArea: "1 / 1", visibility: playing ? "visible" : "hidden" }}>
+            ❚❚ Pause
+          </span>
+          <span aria-hidden={playing} style={{ gridArea: "1 / 1", visibility: playing ? "hidden" : "visible" }}>
+            ▶ Play
+          </span>
         </button>
         <label style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 260px", minWidth: 0, fontSize: 13, color: "#5f6b7a" }}>
           {/* Reserve the width of the widest label (the formatted duration) so

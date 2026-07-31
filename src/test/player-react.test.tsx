@@ -43,6 +43,30 @@ describe("RecordPlayer", () => {
     expect(screen.getByRole("button", { name: "Pause recording" })).toBeInTheDocument();
   });
 
+  it("renders both play/pause labels stacked so the button width never changes", () => {
+    render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
+
+    const button = screen.getByRole("button", { name: "Play recording" });
+    const labels = Array.from(button.querySelectorAll("span")).map((span) => ({
+      text: span.textContent,
+      hidden: span.style.visibility === "hidden",
+    }));
+    expect(labels).toEqual([
+      { text: "❚❚ Pause", hidden: true },
+      { text: "▶ Play", hidden: false },
+    ]);
+
+    fireEvent.click(button);
+
+    const paused = Array.from(
+      screen.getByRole("button", { name: "Pause recording" }).querySelectorAll("span"),
+    ).map((span) => ({ text: span.textContent, hidden: span.style.visibility === "hidden" }));
+    expect(paused).toEqual([
+      { text: "❚❚ Pause", hidden: false },
+      { text: "▶ Play", hidden: true },
+    ]);
+  });
+
   it("reserves a fixed-width elapsed label so the slider does not resize during playback", () => {
     render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
 
