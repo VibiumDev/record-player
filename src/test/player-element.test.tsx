@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import JSZip from "jszip";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { defineVibiumRecordPlayerElement } from "../packages/player-element";
+import {
+  defineVibiumRecordPlayerElement,
+  type VibiumRecordPlayerElement,
+} from "../packages/player-element";
 
 function okZipResponse() {
   // Invalid payload is enough for the element error path. Core parser tests cover valid zips.
@@ -25,6 +28,26 @@ describe("player-element", () => {
     const second = defineVibiumRecordPlayerElement();
     expect(second).toBe(first);
     expect(customElements.get("vibium-record-player")).toBe(first);
+  });
+
+  it("parses and reflects the credentials control", () => {
+    defineVibiumRecordPlayerElement();
+    const element = document.createElement("vibium-record-player") as VibiumRecordPlayerElement;
+
+    expect(element.credentials).toBe("same-origin");
+    element.setAttribute("credentials", " OMIT ");
+    expect(element.credentials).toBe("omit");
+    element.setAttribute("credentials", "include");
+    expect(element.credentials).toBe("include");
+    element.setAttribute("credentials", "same-origin");
+    expect(element.credentials).toBe("same-origin");
+    element.setAttribute("credentials", "unsupported");
+    expect(element.credentials).toBe("same-origin");
+
+    element.credentials = "omit";
+    expect(element.getAttribute("credentials")).toBe("omit");
+    element.removeAttribute("credentials");
+    expect(element.credentials).toBe("same-origin");
   });
 
   it("renders the player and dispatches a ready event for a valid recording", async () => {
@@ -57,6 +80,36 @@ describe("player-element", () => {
     act(() => {
       document.body.removeChild(element);
     });
+  });
+
+  it("passes explicit credentials to loads and reloads when they change", async () => {
+    defineVibiumRecordPlayerElement();
+    const fetchMock = vi.fn(async () => okZipResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const element = document.createElement("vibium-record-player") as VibiumRecordPlayerElement;
+    element.setAttribute("src", "https://example.test/record.zip");
+    element.setAttribute("credentials", "omit");
+
+    act(() => document.body.appendChild(element));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("https://example.test/record.zip", {
+        credentials: "omit",
+        signal: expect.any(AbortSignal),
+      });
+    });
+
+    act(() => {
+      element.credentials = "include";
+    });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenLastCalledWith("https://example.test/record.zip", {
+        credentials: "include",
+        signal: expect.any(AbortSignal),
+      });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    act(() => document.body.removeChild(element));
   });
 
   it("loads and renders Twee through the custom element", async () => {

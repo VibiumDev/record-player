@@ -21,13 +21,27 @@ function visibilityAttribute(value: string | null): boolean | "visible" | "hidde
   return "visible";
 }
 
+function credentialsAttribute(value: string | null): RequestCredentials {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "omit" || normalized === "include") return normalized;
+  return "same-origin";
+}
+
 export class VibiumRecordPlayerElement extends HTMLElement {
   static get observedAttributes() {
-    return ["src", "inspector", "timeline"];
+    return ["src", "credentials", "inspector", "timeline"];
   }
 
   private root: Root | null = null;
   private mount: HTMLDivElement | null = null;
+
+  get credentials(): RequestCredentials {
+    return credentialsAttribute(this.getAttribute("credentials"));
+  }
+
+  set credentials(value: RequestCredentials) {
+    this.setAttribute("credentials", value);
+  }
 
   connectedCallback() {
     if (!this.mount) {
@@ -50,6 +64,7 @@ export class VibiumRecordPlayerElement extends HTMLElement {
     if (!this.mount) return;
     if (!this.root) this.root = createRoot(this.mount);
     const src = this.getAttribute("src");
+    const credentials = this.credentials;
     const inspector = visibilityAttribute(this.getAttribute("inspector"));
     const timeline = visibilityAttribute(this.getAttribute("timeline"));
 
@@ -62,6 +77,7 @@ export class VibiumRecordPlayerElement extends HTMLElement {
       <RecordPlayerLoader
         key={src}
         src={src}
+        credentials={credentials}
         inspector={inspector}
         timeline={timeline}
         onReady={(recording) => {
