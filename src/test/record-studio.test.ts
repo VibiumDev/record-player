@@ -21,6 +21,8 @@ describe("RecordStudio trace timing", () => {
 
     expect(source).toMatch(/from "jszip"/);
     expect(source).not.toContain("cdnjs.cloudflare.com/ajax/libs/jszip");
+    expect(source).toContain('accept=".zip,.twee"');
+    expect(source).toContain("or Twee");
   });
 
   it("reads HAR monotonic time as ms, rescaling only legacy epoch-seconds", () => {

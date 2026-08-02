@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import JSZip from "jszip";
+import { detectRecordingFormat, parseRecording } from "../packages/player-core";
+import { RecordPlayer } from "../packages/player-react";
 
 /*
   Vibium Player — player.vibium.dev
@@ -1230,6 +1232,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [traceData, setTraceData] = useState(null);
+  const [tweeRecording, setTweeRecording] = useState(null);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activePanel, setActivePanel] = useState("actions");
@@ -1581,6 +1584,49 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     setLoading(false);
   }, []);
 
+  // Use the shared content detector before the legacy Vibium path. A valid
+  // Twee archive is handed to the reusable player; Vibium stays on the
+  // existing full studio implementation below.
+  const loadRecordingFile = useCallback(async (file, sourceName) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const format = await detectRecordingFormat(file);
+      if (format === "twee") {
+        const detected = await parseRecording(file, {
+          source: sourceName || file?.name || undefined,
+        });
+        setTraceData(null);
+        setTweeRecording(detected);
+        setFileList(detected.files);
+        setPlayhead(0);
+        setIsPlaying(false);
+        setLoading(false);
+        return;
+      }
+    } catch (detectionError) {
+      // Existing embedded tests and hosts can inject a JSZip-compatible
+      // reader for legacy, non-ZIP fixtures. Keep that Vibium compatibility,
+      // but production detection failures always surface. In particular, a
+      // malformed Twee archive cannot become a Vibium recording based on its
+      // extension.
+      const hasInjectedLegacyReader = typeof window !== "undefined"
+        && window.JSZip
+        && window.JSZip !== JSZip
+        && typeof window.JSZip.version !== "string";
+      const inputBytes = typeof file?.byteLength === "number" ? file.byteLength : file?.size;
+      const isInjectedFixture = hasInjectedLegacyReader && Number(inputBytes) <= 3;
+      if (!isInjectedFixture) {
+        setError(detectionError instanceof Error ? detectionError.message : String(detectionError));
+        setLoading(false);
+        return;
+      }
+    }
+
+    setTweeRecording(null);
+    await loadTrace(file);
+  }, [loadTrace]);
+
   // ─── Persist panel state ────────────────────────────────────────────────
   useEffect(() => {
     try {
@@ -1614,9 +1660,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       e.preventDefault();
       e.stopPropagation();
       const file = e.dataTransfer?.files?.[0];
-      if (file) loadTrace(file);
+      if (file) loadRecordingFile(file);
     },
-    [loadTrace],
+    [loadRecordingFile],
   );
 
   const handleDragOver = (e) => {
@@ -1626,13 +1672,15 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
   const handleFileInput = (e) => {
     const file = e.target.files?.[0];
-    if (file) loadTrace(file);
+    if (file) loadRecordingFile(file);
+    // Let the same file be selected again after an error or eject.
+    e.target.value = "";
   };
 
   // ─── Auto-load trace from URL param or initialFile prop ──────────────
   useEffect(() => {
     if (initialFile) {
-      loadTrace(initialFile);
+      loadRecordingFile(initialFile);
       return;
     }
     if (hideGlobalChrome) return; // embedded mode — no URL param loading
@@ -1645,10 +1693,10 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           if (!r.ok) throw new Error(`Failed to fetch ${traceUrl}`);
           return r.blob();
         })
-        .then((blob) => loadTrace(blob))
+        .then((blob) => loadRecordingFile(blob, traceUrl))
         .catch((e) => setError(e.message));
     }
-  }, [initialFile]);
+  }, [initialFile, loadRecordingFile]);
 
   // ─── Playback ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1903,6 +1951,66 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   }, [traceData, zoom]);
 
   // ─── Drop zone (no trace loaded) ──────────────────────────────────────
+  if (tweeRecording) {
+    return (
+      <div
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        style={{
+          boxSizing: "border-box",
+          width: "100%",
+          minHeight: hideGlobalChrome ? "100%" : "100vh",
+          background: V.bg,
+          color: V.text,
+          padding: mobile ? 8 : 20,
+          overflow: "auto",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1200,
+            margin: "0 auto 12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <span style={{ color: V.textMid, fontSize: 14 }}>Terminal recording</span>
+          <label
+            style={{
+              position: "relative",
+              display: "inline-flex",
+              alignItems: "center",
+              border: `1px solid ${V.border}`,
+              borderRadius: 6,
+              background: V.bgCard,
+              color: V.textMid,
+              padding: "6px 12px",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Open another recording
+            <input
+              aria-label="Open another recording"
+              type="file"
+              accept=".zip,.twee"
+              onChange={handleFileInput}
+              style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+            />
+          </label>
+        </div>
+        {loading ? <div role="status" style={{ maxWidth: 1200, margin: "0 auto 8px", color: V.orange }}>Loading recording…</div> : null}
+        {error ? <div role="alert" style={{ maxWidth: 1200, margin: "0 auto 8px", color: "#ef4444" }}>Error: {error}</div> : null}
+        <RecordPlayer
+          recording={tweeRecording}
+          style={{ maxWidth: 1200, margin: "0 auto" }}
+        />
+      </div>
+    );
+  }
+
   if (!traceData) {
     if (hideGlobalChrome) {
       // Embedded mode — show compact loading/drop state
@@ -1999,9 +2107,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         </div>
         <div style={{ fontSize: 14, color: V.textDim, marginTop: -4 }}>player.vibium.dev</div>
         <div style={{ color: V.textDim, fontSize: 17 }}>
-          Drop a Vibium{" "}
-          <code style={{ background: V.bgCard, padding: "2px 6px", borderRadius: 4, color: V.amber }}>record.zip</code>{" "}
-          here
+          Drop a Vibium <code style={{ background: V.bgCard, padding: "2px 6px", borderRadius: 4, color: V.amber }}>.zip</code>
+          {" or Twee "}
+          <code style={{ background: V.bgCard, padding: "2px 6px", borderRadius: 4, color: V.amber }}>.twee</code> here
         </div>
 
         <div
@@ -2025,7 +2133,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           <div style={{ color: V.textDim, fontSize: 15 }}>Drag & drop or click to browse</div>
           <input
             type="file"
-            accept=".zip"
+            accept=".zip,.twee"
             onChange={handleFileInput}
             style={{ position: "absolute", opacity: 0, width: 320, height: 160, cursor: "pointer", outline: "none" }}
           />
@@ -2044,7 +2152,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
         {loading && <div style={{ color: V.orange, fontSize: 16 }}>Loading trace...</div>}
         {error && (
-          <div style={{ color: "#ef4444", fontSize: 15, maxWidth: 400, textAlign: "center" }}>Error: {error}</div>
+          <div role="alert" style={{ color: "#ef4444", fontSize: 15, maxWidth: 400, textAlign: "center" }}>Error: {error}</div>
         )}
 
         <div

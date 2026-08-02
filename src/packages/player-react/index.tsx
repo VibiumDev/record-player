@@ -1,5 +1,25 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { loadRecording, type LoadedRecording, type LoadRecordingOptions, PlayerError } from "../player-core";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  loadRecording,
+  type LoadedRecording,
+  type LoadRecordingOptions,
+  PlayerError,
+  type TweeEvent,
+  type TweeRecording,
+  type VibiumRecording,
+} from "../player-core";
+import {
+  TerminalPresentation,
+  type GhosttyTerminalFactory,
+} from "./terminal";
+
+export {
+  sanitizeGhosttyHTML,
+  TerminalPresentation,
+  type GhosttyTerminalFactory,
+  type TerminalPresentationProps,
+} from "./terminal";
 
 export interface RecordPlayerProps {
   recording: LoadedRecording;
@@ -8,6 +28,8 @@ export interface RecordPlayerProps {
   className?: string;
   style?: React.CSSProperties;
   storageKey?: string | false;
+  /** Primarily useful for deterministic tests and custom WASM hosting. */
+  terminalFactory?: GhosttyTerminalFactory;
 }
 
 export interface RecordPlayerLoaderProps extends Omit<RecordPlayerProps, "recording"> {
@@ -26,58 +48,200 @@ function formatMs(value: number): string {
   return `${Math.round(value)}ms`;
 }
 
-function optionVisible(value: boolean | "visible" | "hidden" | undefined, defaultValue = true): boolean {
+function optionVisible(
+  value: boolean | "visible" | "hidden" | undefined,
+  defaultValue = true,
+): boolean {
   if (value === "hidden") return false;
   if (value === "visible") return true;
   return value ?? defaultValue;
 }
 
-export function RecordPlayer({ recording, inspector = true, timeline = true, className, style }: RecordPlayerProps) {
+function eventKind(recording: LoadedRecording, event: LoadedRecording["timeline"]["events"][number]): string {
+  return recording.format === "vibium"
+    ? (event as VibiumRecording["timeline"]["events"][number]).kind
+    : (event as TweeEvent).type;
+}
+
+function eventLabel(event: TweeEvent): string {
+  if (event.type === "input") {
+    if (event.key) return `Input key: ${event.key}`;
+    if (event.mouse) return `Mouse input: ${event.mouse.gesture}`;
+    const text = new TextDecoder().decode(event.bytes);
+    return `Input${event.inputKind ? ` (${event.inputKind})` : ""}: ${text || `${event.bytes.byteLength} bytes`}`;
+  }
+  if (event.type === "resize") return `Resize to ${event.cols} × ${event.rows}`;
+  if (event.type === "exit") return `Exit code ${event.code}`;
+  return `Output: ${event.bytes.byteLength} bytes`;
+}
+
+function timelineMarkers(recording: LoadedRecording): LoadedRecording["timeline"]["events"] {
+  const events = recording.timeline.events;
+  if (recording.format === "vibium") return events.slice(0, 250);
+
+  // Terminal output streams are dense. Keep the long-standing 250-marker
+  // rendering budget for output, but never hide the input, resize, or exit
+  // events users need to understand a Twee recording.
+  const semantic = recording.terminalEvents.filter((event) => event.type !== "output");
+  const outputBudget = Math.max(0, 250 - semantic.length);
+  const outputEvents = recording.terminalEvents.filter((event) => event.type === "output");
+  const sampledOutput = outputEvents.length <= outputBudget
+    ? outputEvents
+    : Array.from({ length: outputBudget }, (_, index) =>
+      outputEvents[Math.floor((index * outputEvents.length) / outputBudget)]);
+
+  return [...sampledOutput, ...semantic].sort((left, right) => left.time - right.time);
+}
+
+function VibiumPresentation({
+  recording,
+  currentTime,
+}: {
+  recording: VibiumRecording;
+  currentTime: number;
+}) {
+  const screenshots = useMemo(
+    () => recording.timeline.screenshots.filter((screenshot) => screenshot.dataUrl),
+    [recording.timeline.screenshots],
+  );
+  const currentScreenshot = useMemo(() => {
+    if (!screenshots.length) return undefined;
+    return screenshots.reduce(
+      (current, screenshot) => (screenshot.time <= currentTime ? screenshot : current),
+      screenshots[0],
+    );
+  }, [currentTime, screenshots]);
+
+  if (!currentScreenshot?.dataUrl) return null;
+  return (
+    <figure
+      style={{
+        margin: "16px 0",
+        border: "1px solid #d7dce3",
+        borderRadius: 8,
+        overflow: "hidden",
+      }}
+    >
+      <img
+        src={currentScreenshot.dataUrl}
+        alt="Current recording screenshot"
+        style={{
+          display: "block",
+          width: "100%",
+          maxHeight: 420,
+          objectFit: "contain",
+          background: "#101419",
+        }}
+      />
+      <figcaption style={{ padding: 8, fontSize: 12, color: "#5f6b7a" }}>
+        Screenshot at {formatMs(currentScreenshot.time)}
+      </figcaption>
+    </figure>
+  );
+}
+
+function TweeDetails({ recording }: { recording: TweeRecording }) {
+  const detailEvents = recording.terminalEvents.filter((event) => event.type !== "output");
+  const resizeCount = recording.terminalEvents.filter((event) => event.type === "resize").length;
+  const inputCount = recording.terminalEvents.filter((event) => event.type === "input").length;
+  const exit = [...recording.terminalEvents].reverse().find((event) => event.type === "exit");
+
+  return (
+    <div style={{ marginTop: 16, border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 8,
+          padding: 12,
+          background: "#f8fafc",
+          fontSize: 13,
+        }}
+      >
+        <span><strong>Command:</strong> {recording.manifest.command.join(" ") || "—"}</span>
+        <span><strong>Terminal:</strong> {recording.manifest.cols} × {recording.manifest.rows}</span>
+        <span><strong>Duration:</strong> {formatMs(recording.timeline.duration)}</span>
+        <span><strong>Input:</strong> {inputCount}</span>
+        <span><strong>Resizes:</strong> {resizeCount}</span>
+        <span><strong>Exit:</strong> {exit?.type === "exit" ? exit.code : "not recorded"}</span>
+      </div>
+      {detailEvents.length ? (
+        <ol aria-label="Terminal event details" style={{ margin: 0, padding: 0, listStyle: "none", maxHeight: 240, overflow: "auto" }}>
+          {detailEvents.map((event) => (
+            <li
+              key={event.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "80px minmax(0, 1fr)",
+                gap: 8,
+                padding: "7px 12px",
+                borderTop: "1px solid #edf1f7",
+                fontSize: 13,
+              }}
+            >
+              <time>{formatMs(event.time)}</time>
+              <span style={{ overflowWrap: "anywhere" }}>{eventLabel(event)}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
+export function RecordPlayer({
+  recording,
+  inspector = true,
+  timeline = true,
+  className,
+  style,
+  terminalFactory,
+}: RecordPlayerProps) {
   const showInspector = optionVisible(inspector);
   const showTimeline = optionVisible(timeline);
   const events = recording.timeline.events;
-  const screenshots = useMemo(() => recording.timeline.screenshots.filter((screenshot) => screenshot.dataUrl), [recording.timeline.screenshots]);
   const duration = Math.max(0, recording.timeline.duration || 0);
   const [currentTime, setCurrentTime] = useState(0);
+  const currentTimeRef = useRef(0);
   const [playing, setPlaying] = useState(false);
-  const currentScreenshot = useMemo(() => {
-    if (!screenshots.length) return undefined;
-    return screenshots.reduce((current, screenshot) => (screenshot.time <= currentTime ? screenshot : current), screenshots[0]);
-  }, [currentTime, screenshots]);
   const counts = useMemo(
-    () =>
-      events.reduce<Record<string, number>>((acc, event) => {
-        acc[event.kind] = (acc[event.kind] ?? 0) + 1;
-        return acc;
-      }, {}),
-    [events],
+    () => events.reduce<Record<string, number>>((acc, event) => {
+      const kind = eventKind(recording, event);
+      acc[kind] = (acc[kind] ?? 0) + 1;
+      return acc;
+    }, {}),
+    [events, recording],
   );
+  const markers = useMemo(() => timelineMarkers(recording), [recording]);
+
+  const seek = useCallback((value: number) => {
+    const next = Math.min(duration, Math.max(0, value));
+    currentTimeRef.current = next;
+    setCurrentTime(next);
+  }, [duration]);
 
   useEffect(() => {
+    currentTimeRef.current = 0;
     setCurrentTime(0);
     setPlaying(false);
   }, [recording]);
 
   useEffect(() => {
     if (!playing) return;
-    const startedAt = performance.now();
-    const initialTime = currentTime;
-    const interval = window.setInterval(() => {
-      setCurrentTime(() => {
-        const next = Math.min(duration, initialTime + performance.now() - startedAt);
-        if (next >= duration) {
-          window.clearInterval(interval);
-          setPlaying(false);
-        }
-        return next;
-      });
-    }, 100);
-    return () => window.clearInterval(interval);
-  }, [currentTime, duration, playing]);
-
-  const seek = (value: number) => {
-    setCurrentTime(Math.min(duration, Math.max(0, value)));
-  };
+    let previous = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const elapsed = Math.max(0, now - previous);
+      previous = now;
+      const next = Math.min(duration, currentTimeRef.current + elapsed);
+      currentTimeRef.current = next;
+      setCurrentTime(next);
+      if (next < duration) frame = window.requestAnimationFrame(tick);
+      else setPlaying(false);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [duration, playing]);
 
   return (
     <section
@@ -97,10 +261,11 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
     >
       <header style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "baseline", minWidth: 0 }}>
         <div style={{ minWidth: 0 }}>
-          <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Vibium Record Player</h2>
+          <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Record Player</h2>
           <div style={{ color: "#5f6b7a", fontSize: 13, overflowWrap: "anywhere" }}>
             {recording.source ? `${recording.source} · ` : ""}
-            {recording.metadata.fileCount} files · {recording.metadata.eventCount} events · {formatMs(recording.timeline.duration)}
+            <strong>{recording.format === "twee" ? "Twee" : "Vibium"}</strong>
+            {` · ${recording.metadata.fileCount} files · ${recording.metadata.eventCount} events · ${formatMs(duration)}`}
           </div>
         </div>
         <div aria-label="event counts" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 }}>
@@ -112,7 +277,7 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
         </div>
       </header>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "16px 0 0", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "16px 0", flexWrap: "wrap" }}>
         <button
           type="button"
           onClick={() => {
@@ -132,8 +297,6 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
             justifyItems: "center",
           }}
         >
-          {/* Both labels stay in the layout, stacked in one grid cell, so the
-              button (and the slider row it shares) never resizes on toggle. */}
           <span aria-hidden={!playing} style={{ gridArea: "1 / 1", visibility: playing ? "visible" : "hidden" }}>
             ❚❚ Pause
           </span>
@@ -142,8 +305,6 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
           </span>
         </button>
         <label style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 260px", minWidth: 0, fontSize: 13, color: "#5f6b7a" }}>
-          {/* Reserve the width of the widest label (the formatted duration) so
-              the flexed slider's geometry stays fixed while time advances. */}
           <span
             style={{
               width: `${formatMs(duration).length}ch`,
@@ -159,7 +320,7 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
             type="range"
             min={0}
             max={duration || 0}
-            step={100}
+            step={1}
             value={Math.min(currentTime, duration || 0)}
             onChange={(event) => seek(Number(event.currentTarget.value))}
             style={{ flex: "1 1 auto", minWidth: 120 }}
@@ -168,59 +329,69 @@ export function RecordPlayer({ recording, inspector = true, timeline = true, cla
         </label>
       </div>
 
-      {currentScreenshot?.dataUrl ? (
-        <figure style={{ margin: "16px 0", border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden" }}>
-          <img src={currentScreenshot.dataUrl} alt="Current recording screenshot" style={{ display: "block", width: "100%", maxHeight: 420, objectFit: "contain", background: "#101419" }} />
-          <figcaption style={{ padding: 8, fontSize: 12, color: "#5f6b7a" }}>Screenshot at {formatMs(currentScreenshot.time)}</figcaption>
-        </figure>
-      ) : null}
+      {recording.format === "twee" ? (
+        <TerminalPresentation
+          recording={recording}
+          currentTime={currentTime}
+          terminalFactory={terminalFactory}
+        />
+      ) : (
+        <VibiumPresentation recording={recording} currentTime={currentTime} />
+      )}
 
       {showTimeline ? (
         <div aria-label="recording timeline" style={{ margin: "16px 0" }}>
           <div style={{ height: 8, borderRadius: 999, background: "#edf1f7", position: "relative" }}>
-            {events.slice(0, 250).map((event) => (
-              <span
-                key={event.id}
-                title={`${event.title ?? event.type ?? event.kind} ${formatMs(event.time)}`}
-                style={{
-                  position: "absolute",
-                  left: `${recording.timeline.duration ? (event.time / recording.timeline.duration) * 100 : 0}%`,
-                  top: -4,
-                  width: 4,
-                  height: 16,
-                  borderRadius: 2,
-                  background: event.kind === "action" ? "#f97316" : event.kind === "network" ? "#2563eb" : event.kind === "console" ? "#7c3aed" : "#64748b",
-                }}
-              />
-            ))}
+            {markers.map((event) => {
+              const kind = eventKind(recording, event);
+              return (
+                <span
+                  key={event.id}
+                  title={`${kind} ${formatMs(event.time)}`}
+                  style={{
+                    position: "absolute",
+                    left: `${duration ? (event.time / duration) * 100 : 0}%`,
+                    top: -4,
+                    width: 4,
+                    height: 16,
+                    borderRadius: 2,
+                    background: kind === "action" || kind === "input" ? "#f97316" : kind === "network" || kind === "resize" ? "#2563eb" : kind === "console" || kind === "exit" ? "#7c3aed" : "#64748b",
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
       ) : null}
 
       {showInspector ? (
-        <div style={{ border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "8px 12px", background: "#f8fafc", fontWeight: 600 }}>Events</div>
-          <ol style={{ margin: 0, padding: 0, listStyle: "none", maxHeight: 360, overflow: "auto" }}>
-            {events.slice(0, 200).map((event) => (
-              <li
-                key={event.id}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "90px 90px minmax(0, 1fr)",
-                  gap: 8,
-                  padding: "8px 12px",
-                  borderTop: "1px solid #edf1f7",
-                  fontSize: 13,
-                  minWidth: 0,
-                }}
-              >
-                <time>{formatMs(event.time)}</time>
-                <span>{event.kind}</span>
-                <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{event.title ?? event.method ?? event.type ?? event.id}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+        recording.format === "twee" ? (
+          <TweeDetails recording={recording} />
+        ) : (
+          <div style={{ border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "8px 12px", background: "#f8fafc", fontWeight: 600 }}>Events</div>
+            <ol style={{ margin: 0, padding: 0, listStyle: "none", maxHeight: 360, overflow: "auto" }}>
+              {recording.timeline.events.slice(0, 200).map((event) => (
+                <li
+                  key={event.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "90px 90px minmax(0, 1fr)",
+                    gap: 8,
+                    padding: "8px 12px",
+                    borderTop: "1px solid #edf1f7",
+                    fontSize: 13,
+                    minWidth: 0,
+                  }}
+                >
+                  <time>{formatMs(event.time)}</time>
+                  <span>{event.kind}</span>
+                  <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{event.title ?? event.method ?? event.type ?? event.id}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )
       ) : null}
     </section>
   );
@@ -238,7 +409,6 @@ export function RecordPlayerLoader({
 }: RecordPlayerLoaderProps) {
   const [recording, setRecording] = useState<LoadedRecording | null>(null);
   const [error, setError] = useState<PlayerError | Error | null>(null);
-
   const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
 
@@ -260,9 +430,9 @@ export function RecordPlayerLoader({
       })
       .catch((err) => {
         if (abort.signal.aborted) return;
-        const error = err instanceof Error ? err : new Error(String(err));
-        setError(error);
-        onErrorRef.current?.(error);
+        const nextError = err instanceof Error ? err : new Error(String(err));
+        setError(nextError);
+        onErrorRef.current?.(nextError);
       });
 
     return () => abort.abort();

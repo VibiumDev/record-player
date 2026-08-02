@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import JSZip from "jszip";
 import CompareStudio from "../components/CompareStudio";
 import RecordStudio from "../components/RecordStudio";
 
@@ -215,5 +216,43 @@ describe("RecordStudio console UI", () => {
     fireEvent.click(skipIdle);
 
     expect(skipIdle).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("detects Twee by archive content, uses the reusable player, and opens a replacement", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    const tweeFile = async (name: string, command: string) => {
+      const zip = new JSZip();
+      zip.file("manifest.json", JSON.stringify({ version: 1, command: [command], cols: 80, rows: 24 }));
+      zip.file("events.jsonl", `${JSON.stringify({ type: "output", t_ms: 0, bytes_b64: "b2s=" })}\n`);
+      const bytes = await zip.generateAsync({ type: "uint8array" });
+      Object.defineProperty(bytes, "name", { value: name });
+      return bytes;
+    };
+
+    const first = await tweeFile("first.twee", "first-command");
+    render(<RecordStudio initialFile={first} />);
+
+    expect(await screen.findByText(/first\.twee/)).toBeInTheDocument();
+    expect(screen.getByText("Twee")).toBeInTheDocument();
+    expect(screen.getByText(/first-command/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Log \(/ })).not.toBeInTheDocument();
+
+    const second = await tweeFile("second.zip", "second-command");
+    fireEvent.change(screen.getByLabelText("Open another recording"), { target: { files: [second] } });
+
+    expect(await screen.findByText(/second\.zip/)).toBeInTheDocument();
+    expect(screen.getByText(/second-command/)).toBeInTheDocument();
+  });
+
+  it("surfaces malformed Twee content even when the file is named .zip", async () => {
+    const zip = new JSZip();
+    zip.file("manifest.json", JSON.stringify({ version: 1, command: ["broken"], cols: 80, rows: 24 }));
+    const malformed = await zip.generateAsync({ type: "uint8array" });
+    Object.defineProperty(malformed, "name", { value: "malformed.zip" });
+
+    render(<RecordStudio initialFile={malformed} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("missing events.jsonl");
+    expect(screen.queryByText("Trace loaded")).not.toBeInTheDocument();
   });
 });

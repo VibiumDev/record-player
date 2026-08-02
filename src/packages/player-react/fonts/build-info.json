@@ -1,0 +1,22 @@
+{
+  "sourceRepository": "https://github.com/paulsmith/twee",
+  "sourcePath": "internal/render/fonts",
+  "files": {
+    "JetBrainsMono-Regular.ttf": {
+      "bytes": 273900,
+      "sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f"
+    },
+    "NotoSansMono-Regular.ttf": {
+      "bytes": 5524,
+      "sha256": "3311e5b3ddc78ca4dcfa612fb36124b8fea77584a8cf41e7d2f6d847a137e813"
+    },
+    "NotoSansSymbols-Regular.ttf": {
+      "bytes": 5252,
+      "sha256": "86a339282c63bfa26f03eaddd6318939c4cd62f58327d5d9ce35d6581a39f0f2"
+    },
+    "NotoSansSymbols2-Regular.ttf": {
+      "bytes": 2244,
+      "sha256": "385c969db6a4f04132decb03210b22b068c666e867e99617abf21b49d08bcd36"
+    }
+  }
+}

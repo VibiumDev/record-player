@@ -6,6 +6,8 @@ import type { LoadedRecording } from "../packages/player-core";
 function recording(): LoadedRecording {
   return {
     version: 1,
+    format: "vibium",
+    presentation: { kind: "screenshot" },
     source: "sample.zip",
     files: ["trace.trace", "resources/page.jpeg"],
     metadata: {

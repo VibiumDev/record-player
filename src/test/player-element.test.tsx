@@ -1,6 +1,7 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import JSZip from "jszip";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { defineVibiumRecordPlayerElement } from "../packages/player-element";
 
@@ -56,6 +57,33 @@ describe("player-element", () => {
     act(() => {
       document.body.removeChild(element);
     });
+  });
+
+  it("loads and renders Twee through the custom element", async () => {
+    defineVibiumRecordPlayerElement();
+    const zip = new JSZip();
+    zip.file("manifest.json", JSON.stringify({ version: 1, command: ["printf", "hello"], cols: 40, rows: 4 }));
+    zip.file("events.jsonl", `${JSON.stringify({ type: "output", t_ms: 0, bytes_b64: "aGVsbG8=" })}\n`);
+    const recording = await zip.generateAsync({ type: "uint8array" });
+    const wasm = await readFile(resolve(process.cwd(), "src/packages/ghostty-browser/assets/ghostty-vt.wasm"));
+    vi.stubGlobal("fetch", vi.fn(async (input: URL | RequestInfo) => {
+      const url = input instanceof Request ? input.url : String(input);
+      return url.includes("ghostty-vt")
+        ? new Response(wasm, { status: 200, statusText: "OK" })
+        : new Response(recording, { status: 200, statusText: "OK" });
+    }));
+    const readyHandler = vi.fn();
+
+    const element = document.createElement("vibium-record-player");
+    element.setAttribute("src", "https://example.test/session.twee");
+    element.addEventListener("vibium-player-ready", readyHandler);
+    act(() => document.body.appendChild(element));
+
+    expect(await screen.findByText("hello")).toBeInTheDocument();
+    await waitFor(() => expect(readyHandler).toHaveBeenCalledTimes(1));
+    expect(readyHandler.mock.calls[0][0].detail.recording.format).toBe("twee");
+
+    act(() => document.body.removeChild(element));
   });
 
   it("upgrades and dispatches an error event when loading fails", async () => {

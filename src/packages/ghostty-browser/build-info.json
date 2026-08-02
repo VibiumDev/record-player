@@ -1,0 +1,11 @@
+{
+  "ghosttyRepository": "https://github.com/ghostty-org/ghostty.git",
+  "ghosttyRevision": "2ed382a15566b267c32fae440b065f7844b15bfb",
+  "zigVersion": "0.15.2",
+  "buildCommand": "zig build -Demit-lib-vt -Dtarget=wasm32-freestanding -Doptimize=ReleaseSmall",
+  "wasmFile": "assets/ghostty-vt.wasm",
+  "wasmBytes": 555074,
+  "wasmGzipBytes": 158887,
+  "wasmSha256": "91a4a82e85320c75f9d9ad81124da347b6bbecfb1866f4884b95b370f4f81bb5",
+  "licenseFile": "LICENSE.ghostty"
+}

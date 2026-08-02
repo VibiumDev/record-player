@@ -1,0 +1,3 @@
+JetBrains Mono is licensed under the SIL Open Font License 1.1.
+Source: https://github.com/JetBrains/JetBrainsMono
+Distributed in this repository under the terms of that license.
