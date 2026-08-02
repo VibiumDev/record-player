@@ -37,7 +37,7 @@ This repository now exposes a first reusable API slice under `src/packages` whil
 
 - `player-core` — pure ZIP loading/parsing (`parseRecording`, `loadRecording`) plus `LoadedRecording`, `TimelineModel`, `RecordingEvent`, `ScreenshotIndex`, and `PlayerError` contracts. URL string loading uses `fetch` with browser `same-origin` credentials by default and supports injected fetch/signal.
 - `player-react` — `RecordPlayer` and `RecordPlayerLoader` React components for rendering a loaded recording or fetching one from `src`.
-- `player-element` — `defineVibiumRecordPlayerElement()` for registering `<vibium-record-player src="/record.zip">`; it dispatches `vibium-player-ready` with `{ recording }` and `vibium-player-error` with `{ error }`.
+- `player-element` — `defineVibiumRecordPlayerElement()` for registering `<vibium-record-player src="/record.zip">`; it dispatches `vibium-player-ready` with `{ recording }` and `vibium-player-error` with `{ error }`. Set its `credentials` attribute or property to `omit`, `same-origin`, or `include` to control recording fetch credentials. The default is `same-origin` for backward compatibility.
 
 Remaining migration work is intentionally staged: the hosted app still uses the existing full-featured studio UI, while future PRs can replace its embedded parser with `player-core`, add formal library build outputs, and migrate the full timeline/compare experience onto these public contracts.
 
