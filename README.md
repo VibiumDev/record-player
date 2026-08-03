@@ -41,6 +41,8 @@ This repository now exposes a first reusable API slice under `src/packages` whil
 
 Remaining migration work is intentionally staged: the hosted app still uses the existing full-featured studio UI, while future PRs can replace its embedded parser with `player-core`, add formal library build outputs, and migrate the full timeline/compare experience onto these public contracts.
 
+`RecordPlayer` includes a fullscreen control when the browser supports the Fullscreen API. When embedding it in an iframe, grant that iframe fullscreen permission (for example, with the `allowfullscreen` attribute).
+
 ## Tech Stack
 
 - React + Vite + TypeScript

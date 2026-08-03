@@ -3,6 +3,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecordPlayer } from "../packages/player-react";
 import type { LoadedRecording } from "../packages/player-core";
 
+const originalRequestFullscreen = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "requestFullscreen");
+const originalExitFullscreen = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+const originalFullscreenElement = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+
+function restoreFullscreenAPI() {
+  for (const [target, key, descriptor] of [
+    [HTMLElement.prototype, "requestFullscreen", originalRequestFullscreen],
+    [document, "exitFullscreen", originalExitFullscreen],
+    [document, "fullscreenElement", originalFullscreenElement],
+  ] as const) {
+    if (descriptor) Object.defineProperty(target, key, descriptor);
+    else delete (target as Record<string, unknown>)[key];
+  }
+}
+
 function recording(): LoadedRecording {
   return {
     version: 1,
@@ -37,6 +52,7 @@ describe("RecordPlayer", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    restoreFullscreenAPI();
   });
 
   it("shows playback controls and toggles play state", () => {
@@ -95,6 +111,57 @@ describe("RecordPlayer", () => {
 
     expect(screen.getByText("Screenshot at 1.00s")).toBeInTheDocument();
     expect(screen.getByAltText("Current recording screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,second");
+  });
+
+  it("enters and exits fullscreen while keeping the player state synchronized", async () => {
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: requestFullscreen });
+    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exitFullscreen });
+    let fullscreenElement: Element | null = null;
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => fullscreenElement });
+
+    render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
+    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+
+    const root = screen.getByRole("heading", { name: "Record Player" }).closest("section");
+    fullscreenElement = root;
+    fireEvent(document, new Event("fullscreenchange"));
+    expect(screen.getByRole("button", { name: "Exit fullscreen" })).toBeInTheDocument();
+    expect(screen.getByTestId("screenshot-presentation")).toHaveStyle({ flex: "1 1 0" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
+    expect(exitFullscreen).toHaveBeenCalledTimes(1);
+    fullscreenElement = null;
+    fireEvent(document, new Event("fullscreenchange"));
+    expect(screen.getByRole("button", { name: "Enter fullscreen" })).toBeInTheDocument();
+  });
+
+  it("reports a rejected fullscreen request", async () => {
+    const requestFullscreen = vi.fn().mockRejectedValue(new Error("blocked"));
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: requestFullscreen });
+    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: vi.fn().mockResolvedValue(undefined) });
+
+    render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
+    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+    await screen.findByRole("status");
+    expect(screen.getByRole("status")).toHaveTextContent("Fullscreen is unavailable");
+  });
+
+  it("reports a native fullscreen error event", () => {
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: vi.fn() });
+    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: vi.fn() });
+    render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
+    fireEvent(document, new Event("fullscreenerror"));
+    expect(screen.getByRole("status")).toHaveTextContent("Fullscreen is unavailable");
+  });
+
+  it("does not render fullscreen controls when the browser API is unavailable", () => {
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: undefined });
+    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: undefined });
+    render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
+    expect(screen.queryByRole("button", { name: "Enter fullscreen" })).not.toBeInTheDocument();
   });
 
   it("caps a Twee idle gap on its first animation frame but leaves Vibium timing unchanged", () => {

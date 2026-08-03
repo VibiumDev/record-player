@@ -105,6 +105,21 @@ describe("TerminalPresentation playback", () => {
     expect(await screen.findByText("A")).toBeInTheDocument();
   });
 
+  it("changes fullscreen layout without recreating the terminal session", async () => {
+    const terminal = new FakeTerminal(80, 24);
+    const factory = vi.fn(async () => terminal);
+    const value = recording();
+    const { rerender } = render(
+      <TerminalPresentation recording={value} currentTime={0} terminalFactory={factory} />,
+    );
+    await screen.findByText("A");
+    rerender(<TerminalPresentation recording={value} currentTime={0} terminalFactory={factory} isFullscreen />);
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(terminal.disposed).toBe(false);
+    expect(screen.getByLabelText("Terminal playback")).toHaveStyle({ height: "100%", minHeight: "0" });
+  });
+
   it("plays from start to end on the RecordPlayer clock and ignores input bytes", async () => {
     const terminal = new FakeTerminal(80, 24);
     const short = recording("play.twee", [

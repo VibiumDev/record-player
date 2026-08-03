@@ -98,9 +98,11 @@ function timelineMarkers(recording: LoadedRecording): LoadedRecording["timeline"
 function VibiumPresentation({
   recording,
   currentTime,
+  isFullscreen = false,
 }: {
   recording: VibiumRecording;
   currentTime: number;
+  isFullscreen?: boolean;
 }) {
   const screenshots = useMemo(
     () => recording.timeline.screenshots.filter((screenshot) => screenshot.dataUrl),
@@ -117,11 +119,13 @@ function VibiumPresentation({
   if (!currentScreenshot?.dataUrl) return null;
   return (
     <figure
+      data-testid="screenshot-presentation"
       style={{
-        margin: "16px 0",
+        margin: isFullscreen ? 0 : "16px 0",
         border: "1px solid #d7dce3",
         borderRadius: 8,
         overflow: "hidden",
+        ...(isFullscreen ? { display: "flex", flex: "1 1 0", minHeight: 0, flexDirection: "column" as const } : {}),
       }}
     >
       <img
@@ -130,7 +134,10 @@ function VibiumPresentation({
         style={{
           display: "block",
           width: "100%",
-          maxHeight: 420,
+          maxHeight: isFullscreen ? "none" : 420,
+          height: isFullscreen ? "100%" : undefined,
+          flex: isFullscreen ? "1 1 0" : undefined,
+          minHeight: 0,
           objectFit: "contain",
           background: "#101419",
         }}
@@ -142,14 +149,14 @@ function VibiumPresentation({
   );
 }
 
-function TweeDetails({ recording }: { recording: TweeRecording }) {
+function TweeDetails({ recording, isFullscreen = false }: { recording: TweeRecording; isFullscreen?: boolean }) {
   const detailEvents = recording.terminalEvents.filter((event) => event.type !== "output");
   const resizeCount = recording.terminalEvents.filter((event) => event.type === "resize").length;
   const inputCount = recording.terminalEvents.filter((event) => event.type === "input").length;
   const exit = [...recording.terminalEvents].reverse().find((event) => event.type === "exit");
 
   return (
-    <div style={{ marginTop: 16, border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden" }}>
+    <div style={{ marginTop: 16, border: "1px solid #d7dce3", borderRadius: 8, overflow: "auto", maxHeight: isFullscreen ? 180 : undefined, flexShrink: 0 }}>
       <div
         style={{
           display: "grid",
@@ -206,6 +213,13 @@ export function RecordPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const currentTimeRef = useRef(0);
   const [playing, setPlaying] = useState(false);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const fullscreenSupported = typeof document !== "undefined" &&
+    typeof document.exitFullscreen === "function" &&
+    typeof HTMLElement !== "undefined" &&
+    typeof HTMLElement.prototype.requestFullscreen === "function";
   const tweeEventTimes = useMemo(
     () => recording.format === "twee" ? recording.terminalEvents.map((event) => event.time) : [],
     [recording],
@@ -233,6 +247,45 @@ export function RecordPlayer({
   }, [recording]);
 
   useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === rootRef.current);
+    const reportFullscreenError = () => {
+      setFullscreenError("Fullscreen is unavailable. Check your browser or embedding permissions.");
+      syncFullscreen();
+    };
+    syncFullscreen();
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    document.addEventListener("fullscreenerror", reportFullscreenError);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+      document.removeEventListener("fullscreenerror", reportFullscreenError);
+    };
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    setFullscreenError(null);
+    const request = root.requestFullscreen;
+    if (document.fullscreenElement === root) {
+      try {
+        void Promise.resolve(document.exitFullscreen()).catch(() => {
+          setFullscreenError("Could not exit fullscreen.");
+        });
+      } catch {
+        setFullscreenError("Could not exit fullscreen.");
+      }
+    } else if (typeof request === "function") {
+      try {
+        void Promise.resolve(request.call(root)).catch(() => {
+          setFullscreenError("Fullscreen is unavailable. Check your browser or embedding permissions.");
+        });
+      } catch {
+        setFullscreenError("Fullscreen is unavailable. Check your browser or embedding permissions.");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     if (!playing) return;
     let previous = performance.now();
     let frame = 0;
@@ -253,17 +306,21 @@ export function RecordPlayer({
 
   return (
     <section
+      ref={rootRef}
       className={className}
       style={{
         boxSizing: "border-box",
         width: "100%",
-        maxWidth: "100%",
-        overflow: "hidden",
+        maxWidth: isFullscreen ? "none" : "100%",
+        height: isFullscreen ? "100%" : undefined,
+        overflow: isFullscreen ? "hidden" : "hidden",
         padding: 16,
-        borderRadius: 8,
+        borderRadius: isFullscreen ? 0 : 8,
         background: "#ffffff",
         fontFamily: "system-ui, sans-serif",
         color: "#172033",
+        display: isFullscreen ? "flex" : undefined,
+        flexDirection: isFullscreen ? "column" : undefined,
         ...style,
       }}
     >
@@ -312,6 +369,19 @@ export function RecordPlayer({
             ▶ Play
           </span>
         </button>
+        {fullscreenSupported ? (
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            style={{
+              border: "1px solid #64748b", borderRadius: 999, background: "#ffffff", color: "#172033",
+              cursor: "pointer", fontWeight: 600, padding: "8px 12px",
+            }}
+          >
+            {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          </button>
+        ) : null}
         <label style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 260px", minWidth: 0, fontSize: 13, color: "#5f6b7a" }}>
           <span
             style={{
@@ -337,18 +407,24 @@ export function RecordPlayer({
         </label>
       </div>
 
-      {recording.format === "twee" ? (
-        <TerminalPresentation
-          recording={recording}
-          currentTime={currentTime}
-          terminalFactory={terminalFactory}
-        />
-      ) : (
-        <VibiumPresentation recording={recording} currentTime={currentTime} />
-      )}
+      {fullscreenError ? <div role="status" aria-live="polite" style={{ color: "#b42318", fontSize: 13, marginBottom: 8 }}>{fullscreenError}</div> : null}
+
+      <div data-record-player-presentation style={isFullscreen ? { display: "flex", flex: "1 1 0", minHeight: 0 } : undefined}>
+        {recording.format === "twee" ? (
+          <TerminalPresentation
+            recording={recording}
+            currentTime={currentTime}
+            terminalFactory={terminalFactory}
+            isFullscreen={isFullscreen}
+            style={isFullscreen ? { flex: "1 1 0", minHeight: 0 } : undefined}
+          />
+        ) : (
+          <VibiumPresentation recording={recording} currentTime={currentTime} isFullscreen={isFullscreen} />
+        )}
+      </div>
 
       {showTimeline ? (
-        <div aria-label="recording timeline" style={{ margin: "16px 0" }}>
+        <div aria-label="recording timeline" style={{ margin: "16px 0", flexShrink: 0 }}>
           <div style={{ height: 8, borderRadius: 999, background: "#edf1f7", position: "relative" }}>
             {markers.map((event) => {
               const kind = eventKind(recording, event);
@@ -374,9 +450,9 @@ export function RecordPlayer({
 
       {showInspector ? (
         recording.format === "twee" ? (
-          <TweeDetails recording={recording} />
+          <TweeDetails recording={recording} isFullscreen={isFullscreen} />
         ) : (
-          <div style={{ border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden", maxHeight: isFullscreen ? 180 : undefined, flexShrink: 0 }}>
             <div style={{ padding: "8px 12px", background: "#f8fafc", fontWeight: 600 }}>Events</div>
             <ol style={{ margin: 0, padding: 0, listStyle: "none", maxHeight: 360, overflow: "auto" }}>
               {recording.timeline.events.slice(0, 200).map((event) => (

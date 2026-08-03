@@ -17,6 +17,8 @@ export interface TerminalPresentationProps {
   terminalFactory?: GhosttyTerminalFactory;
   className?: string;
   style?: React.CSSProperties;
+  /** Lets the player use the available viewport height without recreating the terminal. */
+  isFullscreen?: boolean;
 }
 
 interface PlaybackSession {
@@ -570,6 +572,7 @@ export function TerminalPresentation({
   terminalFactory = defaultTerminalFactory,
   className,
   style,
+  isFullscreen = false,
 }: TerminalPresentationProps) {
   const currentTimeRef = useRef(currentTime);
   const sessionRef = useRef<PlaybackSession | null>(null);
@@ -671,7 +674,8 @@ export function TerminalPresentation({
         style={{
           boxSizing: "border-box",
           position: "relative",
-          minHeight: 180,
+          minHeight: isFullscreen ? 0 : 180,
+          height: isFullscreen ? "100%" : undefined,
           overflow: "auto",
           borderRadius: 8,
           background: "#000000",
