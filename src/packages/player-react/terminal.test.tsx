@@ -197,10 +197,37 @@ describe("TerminalPresentation playback", () => {
       <TerminalPresentation recording={value} currentTime={0} terminalFactory={async () => terminal} />,
     );
 
+    const viewport = screen.getByLabelText("Terminal playback");
+    const grid = screen.getByTestId("terminal-grid");
+    const scroll = screen.getByTestId("terminal-scroll-content");
+    let gridRect = { left: 12, top: 12, width: 640, height: 480 };
+    const rect = (left: number, top: number, width: number, height: number) => ({
+      x: left, y: top, left, top, width, height,
+      right: left + width, bottom: top + height,
+      toJSON: () => ({}),
+    }) as DOMRect;
+    vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue(rect(0, 0, 700, 520));
+    vi.spyOn(grid, "getBoundingClientRect").mockImplementation(() => rect(
+      gridRect.left, gridRect.top, gridRect.width, gridRect.height,
+    ));
+
     rerender(<TerminalPresentation recording={value} currentTime={100} terminalFactory={async () => terminal} />);
     const annotation = await screen.findByTestId("mouse-annotation");
     expect(annotation).toHaveStyle({ left: "12px", top: "12px" });
     expect(annotation).toHaveAttribute("viewBox", "0 0 640 480");
+
+    // The overlay is not inside the scrolling content, so it is explicitly
+    // remeasured into viewport coordinates when that content moves.
+    gridRect = { left: -88, top: -48, width: 640, height: 480 };
+    fireEvent.scroll(scroll);
+    await waitFor(() => expect(annotation).toHaveStyle({ left: "-88px", top: "-48px" }));
+
+    gridRect = { left: -88, top: -48, width: 800, height: 600 };
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => {
+      expect(annotation).toHaveStyle({ width: "800px", height: "600px" });
+      expect(annotation).toHaveAttribute("viewBox", "0 0 800 600");
+    });
 
     rerender(<TerminalPresentation recording={value} currentTime={150} terminalFactory={async () => terminal} />);
     await waitFor(() => expect(screen.queryByTestId("mouse-annotation")).not.toBeInTheDocument());

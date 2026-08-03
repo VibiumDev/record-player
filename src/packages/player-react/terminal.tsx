@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { TweeMouseInput, TweeRecording } from "../player-core";
 import {
@@ -39,10 +39,14 @@ interface ActiveMouseAnnotation {
   generation: number;
 }
 
+interface TerminalGridGeometry {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 const mouseAnnotationDuration = 500;
-const terminalCellWidth = 8;
-const terminalCellHeight = 20;
-const terminalPadding = 12;
 
 const defaultTerminalFactory: GhosttyTerminalFactory = (cols, rows) =>
   createGhosttyTerminal(cols, rows);
@@ -443,10 +447,19 @@ function mouseColor(button: string | undefined): string {
   }
 }
 
-function MouseAnnotation({ annotation }: { annotation: ActiveMouseAnnotation }) {
+function MouseAnnotation({
+  annotation,
+  geometry,
+}: {
+  annotation: ActiveMouseAnnotation;
+  geometry: TerminalGridGeometry;
+}) {
   const { mouse, cols, rows, generation } = annotation;
-  const x = (value: number) => (value + 0.5) * terminalCellWidth;
-  const y = (value: number) => (value + 0.5) * terminalCellHeight;
+  const cellWidth = geometry.width / cols;
+  const cellHeight = geometry.height / rows;
+  const markerSize = Math.max(4, Math.min(cellWidth, cellHeight) * 1.125);
+  const x = (value: number) => (value + 0.5) * cellWidth;
+  const y = (value: number) => (value + 0.5) * cellHeight;
   const color = mouseColor(mouse.button);
   const outlined = (element: React.ReactNode) => <>
     {React.cloneElement(element as React.ReactElement<React.SVGProps<SVGElement>>, { stroke: "#000", strokeWidth: 6 })}
@@ -459,26 +472,26 @@ function MouseAnnotation({ annotation }: { annotation: ActiveMouseAnnotation }) 
   if (gesture === "click" && mouse.x != null && mouse.y != null) {
     const cx = x(mouse.x), cy = y(mouse.y);
     if (mouse.button?.toLowerCase() === "right") {
-      mark = outlined(<path d={`M ${cx} ${cy - 9} L ${cx + 9} ${cy} L ${cx} ${cy + 9} L ${cx - 9} ${cy} Z`} fill="none" />);
+      mark = outlined(<path d={`M ${cx} ${cy - markerSize} L ${cx + markerSize} ${cy} L ${cx} ${cy + markerSize} L ${cx - markerSize} ${cy} Z`} fill="none" />);
     } else if (mouse.button?.toLowerCase() === "middle") {
-      mark = outlined(<rect x={cx - 7} y={cy - 7} width={14} height={14} fill="none" />);
+      mark = outlined(<rect x={cx - markerSize * 0.78} y={cy - markerSize * 0.78} width={markerSize * 1.56} height={markerSize * 1.56} fill="none" />);
     } else {
-      mark = outlined(<circle cx={cx} cy={cy} r={9} fill="none" />);
+      mark = outlined(<circle cx={cx} cy={cy} r={markerSize} fill="none" />);
     }
   } else if (gesture === "hover" && mouse.x != null && mouse.y != null) {
     const cx = x(mouse.x), cy = y(mouse.y);
-    mark = outlined(<path d={`M ${cx - 10} ${cy} H ${cx + 10} M ${cx} ${cy - 10} V ${cy + 10}`} fill="none" />);
+    mark = outlined(<path d={`M ${cx - markerSize} ${cy} H ${cx + markerSize} M ${cx} ${cy - markerSize} V ${cy + markerSize}`} fill="none" />);
   } else if (gesture === "scroll" && mouse.x != null && mouse.y != null) {
     const cx = x(mouse.x), cy = y(mouse.y);
     const up = mouse.direction === "up";
-    const points = [0, 6, 12].map((offset) => {
-      const dy = (up ? -1 : 1) * (offset - 6);
-      return `M ${cx - 7} ${cy + dy - (up ? -3 : 3)} L ${cx} ${cy + dy + (up ? 3 : -3)} L ${cx + 7} ${cy + dy - (up ? -3 : 3)}`;
+    const points = [0, markerSize * 0.67, markerSize * 1.34].map((offset) => {
+      const dy = (up ? -1 : 1) * (offset - markerSize * 0.67);
+      return `M ${cx - markerSize * 0.78} ${cy + dy - (up ? -markerSize * 0.34 : markerSize * 0.34)} L ${cx} ${cy + dy + (up ? markerSize * 0.34 : -markerSize * 0.34)} L ${cx + markerSize * 0.78} ${cy + dy - (up ? -markerSize * 0.34 : markerSize * 0.34)}`;
     }).join(" ");
     mark = <g>{outlined(<path d={points} fill="none" />)}</g>;
   } else if (gesture === "drag" && mouse.fromX != null && mouse.fromY != null && mouse.toX != null && mouse.toY != null) {
     const startX = x(mouse.fromX), startY = y(mouse.fromY), endX = x(mouse.toX), endY = y(mouse.toY);
-    mark = <>{outlined(<path d={`M ${startX} ${startY} L ${endX} ${endY}`} fill="none" />)}{outlined(<circle cx={startX} cy={startY} r={4} fill={color} />)}{outlined(<circle cx={endX} cy={endY} r={7} fill="none" />)}</>;
+    mark = <>{outlined(<path d={`M ${startX} ${startY} L ${endX} ${endY}`} fill="none" />)}{outlined(<circle cx={startX} cy={startY} r={markerSize * 0.45} fill={color} />)}{outlined(<circle cx={endX} cy={endY} r={markerSize * 0.78} fill="none" />)}</>;
   }
 
   return (
@@ -486,8 +499,8 @@ function MouseAnnotation({ annotation }: { annotation: ActiveMouseAnnotation }) 
       key={generation}
       aria-hidden="true"
       data-testid="mouse-annotation"
-      viewBox={`0 0 ${cols * terminalCellWidth} ${rows * terminalCellHeight}`}
-      style={{ position: "absolute", left: terminalPadding, top: terminalPadding, width: cols * terminalCellWidth, height: rows * terminalCellHeight, overflow: "visible", pointerEvents: "none", zIndex: 1 }}
+      viewBox={`0 0 ${geometry.width} ${geometry.height}`}
+      style={{ position: "absolute", left: geometry.left, top: geometry.top, width: geometry.width, height: geometry.height, overflow: "visible", pointerEvents: "none", zIndex: 1 }}
     >
       <g style={{ animation: `record-player-mouse-annotation ${mouseAnnotationDuration}ms ease-out forwards`, transformOrigin: "center" }}>
         {mark}
@@ -519,6 +532,7 @@ function applyThrough(
   onHTML: (html: string) => void,
   onError: (error: Error) => void,
   onMouseAnnotation: (annotation: Omit<ActiveMouseAnnotation, "generation"> | null) => void,
+  onGridResize: (cols: number, rows: number) => void,
 ): void {
   if (session.disposed) return;
   const target = Math.max(0, Math.min(session.recording.timeline.duration, targetTime));
@@ -534,6 +548,7 @@ function applyThrough(
       session.cols = session.recording.manifest.cols;
       session.rows = session.recording.manifest.rows;
       onMouseAnnotation(null);
+      onGridResize(session.cols, session.rows);
       screenChanged = true;
     }
 
@@ -554,6 +569,7 @@ function applyThrough(
         session.cols = event.cols;
         session.rows = event.rows;
         onMouseAnnotation(null);
+        onGridResize(session.cols, session.rows);
         screenChanged = true;
       } else if (event.type === "input" && event.inputKind === "mouse" && event.mouse && validMouseAnnotation(event.mouse, session.cols, session.rows)) {
         onMouseAnnotation({ mouse: event.mouse, cols: session.cols, rows: session.rows });
@@ -564,6 +580,75 @@ function applyThrough(
   } catch (cause) {
     onError(cause instanceof Error ? cause : new Error(String(cause)));
   }
+}
+
+/**
+ * Keep the annotation layer in the terminal's document coordinate system.
+ * The overlay is a sibling of the scroller, so it never becomes part of the
+ * scrollable content itself; measuring the live grid and updating on scroll
+ * maps it back over the same cells after a resize, font load, or scroll.
+ */
+function useTerminalGridGeometry(
+  viewportRef: React.RefObject<HTMLDivElement | null>,
+  scrollRef: React.RefObject<HTMLDivElement | null>,
+  gridRef: React.RefObject<HTMLDivElement | null>,
+  active: boolean,
+): TerminalGridGeometry | null {
+  const [geometry, setGeometry] = useState<TerminalGridGeometry | null>(null);
+
+  useLayoutEffect(() => {
+    if (!active) {
+      setGeometry(null);
+      return;
+    }
+    const viewport = viewportRef.current;
+    const scroll = scrollRef.current;
+    const grid = gridRef.current;
+    if (!viewport || !scroll || !grid) return;
+
+    let frame: number | null = null;
+    const update = () => {
+      frame = null;
+      const viewportRect = viewport.getBoundingClientRect();
+      const gridRect = grid.getBoundingClientRect();
+      if (gridRect.width <= 0 || gridRect.height <= 0) return;
+      const next = {
+        left: gridRect.left - viewportRect.left,
+        top: gridRect.top - viewportRect.top,
+        width: gridRect.width,
+        height: gridRect.height,
+      };
+      setGeometry((current) => current &&
+        current.left === next.left && current.top === next.top &&
+        current.width === next.width && current.height === next.height
+        ? current
+        : next);
+    };
+    const scheduleUpdate = () => {
+      if (frame !== null) return;
+      frame = requestTerminalFrame(update);
+    };
+
+    update();
+    scroll.addEventListener("scroll", scheduleUpdate, { passive: true });
+    const observer = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(scheduleUpdate);
+    observer?.observe(viewport);
+    observer?.observe(grid);
+    window.addEventListener("resize", scheduleUpdate);
+    const fonts = document.fonts;
+    void fonts?.ready?.then(scheduleUpdate);
+
+    return () => {
+      if (frame !== null) cancelTerminalFrame(frame);
+      scroll.removeEventListener("scroll", scheduleUpdate);
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [active, gridRef, scrollRef, viewportRef]);
+
+  return geometry;
 }
 
 export function TerminalPresentation({
@@ -580,7 +665,14 @@ export function TerminalPresentation({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<Error | null>(null);
   const [mouseAnnotation, setMouseAnnotation] = useState<ActiveMouseAnnotation | null>(null);
+  const [gridSize, setGridSize] = useState(() => ({
+    cols: recording.manifest.cols,
+    rows: recording.manifest.rows,
+  }));
   const annotationGeneration = useRef(0);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   currentTimeRef.current = currentTime;
 
@@ -606,6 +698,7 @@ export function TerminalPresentation({
     setHTML("");
     setError(null);
     setStatus("loading");
+    setGridSize({ cols: recording.manifest.cols, rows: recording.manifest.rows });
 
     terminalFactory(recording.manifest.cols, recording.manifest.rows)
       .then((terminal) => {
@@ -628,7 +721,7 @@ export function TerminalPresentation({
         applyThrough(session, currentTimeRef.current, setHTML, (nextError) => {
           setError(nextError);
           setStatus("error");
-        }, setActiveMouseAnnotation);
+        }, setActiveMouseAnnotation, (cols, rows) => setGridSize({ cols, rows }));
         // An empty screen still needs one initial formatter pass.
         formatSession(session, setHTML, (nextError) => {
           setError(nextError);
@@ -658,29 +751,37 @@ export function TerminalPresentation({
     applyThrough(session, currentTime, setHTML, (nextError) => {
       setError(nextError);
       setStatus("error");
-    }, setActiveMouseAnnotation);
+    }, setActiveMouseAnnotation, (cols, rows) => setGridSize({ cols, rows }));
   }, [currentTime, recording]);
 
   const content = useMemo(() => sanitizeGhosttyHTML(html), [html]);
+  const annotationGeometry = useTerminalGridGeometry(
+    viewportRef,
+    scrollRef,
+    gridRef,
+    status === "ready" && mouseAnnotation !== null,
+  );
 
   return (
     <>
       <style data-record-player-terminal-fonts>{terminalFontFaces}</style>
       <style data-record-player-mouse-annotation>{mouseAnnotationStyles}</style>
       <div
+        ref={viewportRef}
         className={className}
         role="region"
         aria-label="Terminal playback"
         style={{
           boxSizing: "border-box",
           position: "relative",
+          display: "flex",
+          flexDirection: "column",
           minHeight: isFullscreen ? 0 : 180,
           height: isFullscreen ? "100%" : undefined,
-          overflow: "auto",
+          overflow: "hidden",
           borderRadius: 8,
           background: "#000000",
           color: "#c8c8c8",
-          padding: 12,
           fontFamily: terminalFont,
           fontSize: 14,
           // The packaged JetBrains face advances exactly 8px at this size in
@@ -692,12 +793,29 @@ export function TerminalPresentation({
           ...style,
         }}
       >
-        {status === "loading" ? <div role="status">Loading terminal…</div> : null}
-        {status === "error" ? (
-          <div role="alert">Unable to render terminal: {error?.message ?? "Unknown error"}</div>
-        ) : null}
-        {status === "ready" ? content : null}
-        {status === "ready" && mouseAnnotation ? <MouseAnnotation annotation={mouseAnnotation} /> : null}
+        <div
+          ref={scrollRef}
+          data-testid="terminal-scroll-content"
+          style={{ boxSizing: "border-box", flex: "1 1 auto", minHeight: 0, overflow: "auto", padding: 12 }}
+        >
+          <div
+            ref={gridRef}
+            data-testid="terminal-grid"
+            style={{
+              boxSizing: "border-box",
+              width: `${gridSize.cols}ch`,
+              height: `${gridSize.rows}lh`,
+              minWidth: "100%",
+            }}
+          >
+            {status === "loading" ? <div role="status">Loading terminal…</div> : null}
+            {status === "error" ? (
+              <div role="alert">Unable to render terminal: {error?.message ?? "Unknown error"}</div>
+            ) : null}
+            {status === "ready" ? content : null}
+          </div>
+        </div>
+        {mouseAnnotation && annotationGeometry ? <MouseAnnotation annotation={mouseAnnotation} geometry={annotationGeometry} /> : null}
       </div>
     </>
   );
