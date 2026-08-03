@@ -168,6 +168,53 @@ describe("TerminalPresentation playback", () => {
     expect(screen.getByTitle("exit 330ms")).toBeInTheDocument();
   });
 
+  it("shows valid mouse input on its recorded terminal cell, then clears it after a resize or 500ms", async () => {
+    const terminal = new FakeTerminal(80, 24);
+    const value = recording("mouse.twee", [
+      output("start", 0, "A"),
+      {
+        id: "mouse", time: 100, type: "input", inputKind: "mouse", bytes: new Uint8Array(),
+        mouse: { gesture: "click", x: 0, y: 0, button: "left", modifiers: [] },
+      },
+      { id: "resize", time: 150, type: "resize", cols: 100, rows: 30 },
+    ], 700);
+    const { rerender } = render(
+      <TerminalPresentation recording={value} currentTime={0} terminalFactory={async () => terminal} />,
+    );
+
+    rerender(<TerminalPresentation recording={value} currentTime={100} terminalFactory={async () => terminal} />);
+    const annotation = await screen.findByTestId("mouse-annotation");
+    expect(annotation).toHaveStyle({ left: "12px", top: "12px" });
+    expect(annotation).toHaveAttribute("viewBox", "0 0 640 480");
+
+    rerender(<TerminalPresentation recording={value} currentTime={150} terminalFactory={async () => terminal} />);
+    await waitFor(() => expect(screen.queryByTestId("mouse-annotation")).not.toBeInTheDocument());
+
+    rerender(<TerminalPresentation recording={value} currentTime={100} terminalFactory={async () => terminal} />);
+    expect(await screen.findByTestId("mouse-annotation")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("mouse-annotation")).not.toBeInTheDocument(), { timeout: 1_000 });
+  });
+
+  it("ignores invalid mouse metadata without interrupting terminal playback", async () => {
+    const terminal = new FakeTerminal(80, 24);
+    const value = recording("invalid-mouse.twee", [
+      output("start", 0, "A"),
+      {
+        id: "invalid", time: 50, type: "input", inputKind: "mouse", bytes: new Uint8Array(),
+        mouse: { gesture: "click", x: 80, y: 0, button: "left", modifiers: [] },
+      },
+      output("end", 100, "B"),
+    ], 100);
+    const { rerender } = render(
+      <TerminalPresentation recording={value} currentTime={0} terminalFactory={async () => terminal} />,
+    );
+    expect(await screen.findByText("A")).toBeInTheDocument();
+
+    rerender(<TerminalPresentation recording={value} currentTime={100} terminalFactory={async () => terminal} />);
+    await waitFor(() => expect(terminal.screen.endsWith("AB")).toBe(true));
+    expect(screen.queryByTestId("mouse-annotation")).not.toBeInTheDocument();
+  });
+
   it("seeks forward incrementally, applies resize in file order, and replays after a backward seek", async () => {
     const terminal = new FakeTerminal(80, 24);
     const value = recording();

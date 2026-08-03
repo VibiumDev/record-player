@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-import type { TweeRecording } from "../player-core";
+import type { TweeMouseInput, TweeRecording } from "../player-core";
 import {
   createGhosttyTerminal,
   type GhosttyTerminal,
@@ -26,7 +26,21 @@ interface PlaybackSession {
   appliedTime: number;
   animationFrame: number | null;
   disposed: boolean;
+  cols: number;
+  rows: number;
 }
+
+interface ActiveMouseAnnotation {
+  mouse: TweeMouseInput;
+  cols: number;
+  rows: number;
+  generation: number;
+}
+
+const mouseAnnotationDuration = 500;
+const terminalCellWidth = 8;
+const terminalCellHeight = 20;
+const terminalPadding = 12;
 
 const defaultTerminalFactory: GhosttyTerminalFactory = (cols, rows) =>
   createGhosttyTerminal(cols, rows);
@@ -39,6 +53,12 @@ const notoSansSymbols2URL = new URL("./fonts/NotoSansSymbols2-Regular.ttf", impo
 const terminalFont =
   "'Record Player JetBrains Mono', 'Record Player Noto Sans Mono', " +
   "'Record Player Noto Sans Symbols', 'Record Player Noto Sans Symbols 2', monospace";
+
+const mouseAnnotationStyles = `
+@keyframes record-player-mouse-annotation {
+  from { transform: scale(0.45); }
+  to { transform: scale(1); }
+}`;
 
 const terminalFontFaces = `
 @font-face {
@@ -398,6 +418,82 @@ export function sanitizeGhosttyHTML(html: string): React.ReactNode {
   );
 }
 
+function validMouseAnnotation(mouse: TweeMouseInput, cols: number, rows: number): boolean {
+  const point = (x: number | undefined, y: number | undefined) =>
+    Number.isSafeInteger(x) && Number.isSafeInteger(y) && x >= 0 && x < cols && y >= 0 && y < rows;
+  const button = mouse.button?.toLowerCase();
+  const validButton = button == null || button === "" || button === "left" || button === "middle" || button === "right";
+
+  switch (mouse.gesture.toLowerCase()) {
+    case "click": return point(mouse.x, mouse.y) && validButton;
+    case "hover": return point(mouse.x, mouse.y);
+    case "scroll": return point(mouse.x, mouse.y) && mouse.ticks != null && mouse.ticks > 0 && (mouse.direction === "up" || mouse.direction === "down");
+    case "drag": return point(mouse.fromX, mouse.fromY) && point(mouse.toX, mouse.toY) && validButton;
+    default: return false;
+  }
+}
+
+function mouseColor(button: string | undefined): string {
+  switch (button?.toLowerCase()) {
+    case "right": return "#ff3cdc";
+    case "middle": return "#ffbe1e";
+    default: return "#14e6ff";
+  }
+}
+
+function MouseAnnotation({ annotation }: { annotation: ActiveMouseAnnotation }) {
+  const { mouse, cols, rows, generation } = annotation;
+  const x = (value: number) => (value + 0.5) * terminalCellWidth;
+  const y = (value: number) => (value + 0.5) * terminalCellHeight;
+  const color = mouseColor(mouse.button);
+  const outlined = (element: React.ReactNode) => <>
+    {React.cloneElement(element as React.ReactElement<React.SVGProps<SVGElement>>, { stroke: "#000", strokeWidth: 6 })}
+    {React.cloneElement(element as React.ReactElement<React.SVGProps<SVGElement>>, { stroke: "#fff", strokeWidth: 4 })}
+    {React.cloneElement(element as React.ReactElement<React.SVGProps<SVGElement>>, { stroke: color, strokeWidth: 2 })}
+  </>;
+  const gesture = mouse.gesture.toLowerCase();
+  let mark: React.ReactNode = null;
+
+  if (gesture === "click" && mouse.x != null && mouse.y != null) {
+    const cx = x(mouse.x), cy = y(mouse.y);
+    if (mouse.button?.toLowerCase() === "right") {
+      mark = outlined(<path d={`M ${cx} ${cy - 9} L ${cx + 9} ${cy} L ${cx} ${cy + 9} L ${cx - 9} ${cy} Z`} fill="none" />);
+    } else if (mouse.button?.toLowerCase() === "middle") {
+      mark = outlined(<rect x={cx - 7} y={cy - 7} width={14} height={14} fill="none" />);
+    } else {
+      mark = outlined(<circle cx={cx} cy={cy} r={9} fill="none" />);
+    }
+  } else if (gesture === "hover" && mouse.x != null && mouse.y != null) {
+    const cx = x(mouse.x), cy = y(mouse.y);
+    mark = outlined(<path d={`M ${cx - 10} ${cy} H ${cx + 10} M ${cx} ${cy - 10} V ${cy + 10}`} fill="none" />);
+  } else if (gesture === "scroll" && mouse.x != null && mouse.y != null) {
+    const cx = x(mouse.x), cy = y(mouse.y);
+    const up = mouse.direction === "up";
+    const points = [0, 6, 12].map((offset) => {
+      const dy = (up ? -1 : 1) * (offset - 6);
+      return `M ${cx - 7} ${cy + dy - (up ? -3 : 3)} L ${cx} ${cy + dy + (up ? 3 : -3)} L ${cx + 7} ${cy + dy - (up ? -3 : 3)}`;
+    }).join(" ");
+    mark = <g>{outlined(<path d={points} fill="none" />)}</g>;
+  } else if (gesture === "drag" && mouse.fromX != null && mouse.fromY != null && mouse.toX != null && mouse.toY != null) {
+    const startX = x(mouse.fromX), startY = y(mouse.fromY), endX = x(mouse.toX), endY = y(mouse.toY);
+    mark = <>{outlined(<path d={`M ${startX} ${startY} L ${endX} ${endY}`} fill="none" />)}{outlined(<circle cx={startX} cy={startY} r={4} fill={color} />)}{outlined(<circle cx={endX} cy={endY} r={7} fill="none" />)}</>;
+  }
+
+  return (
+    <svg
+      key={generation}
+      aria-hidden="true"
+      data-testid="mouse-annotation"
+      viewBox={`0 0 ${cols * terminalCellWidth} ${rows * terminalCellHeight}`}
+      style={{ position: "absolute", left: terminalPadding, top: terminalPadding, width: cols * terminalCellWidth, height: rows * terminalCellHeight, overflow: "visible", pointerEvents: "none", zIndex: 1 }}
+    >
+      <g style={{ animation: `record-player-mouse-annotation ${mouseAnnotationDuration}ms ease-out forwards`, transformOrigin: "center" }}>
+        {mark}
+      </g>
+    </svg>
+  );
+}
+
 function formatSession(
   session: PlaybackSession,
   onHTML: (html: string) => void,
@@ -420,6 +516,7 @@ function applyThrough(
   targetTime: number,
   onHTML: (html: string) => void,
   onError: (error: Error) => void,
+  onMouseAnnotation: (annotation: Omit<ActiveMouseAnnotation, "generation"> | null) => void,
 ): void {
   if (session.disposed) return;
   const target = Math.max(0, Math.min(session.recording.timeline.duration, targetTime));
@@ -432,6 +529,9 @@ function applyThrough(
         session.recording.manifest.rows,
       );
       session.nextEventIndex = 0;
+      session.cols = session.recording.manifest.cols;
+      session.rows = session.recording.manifest.rows;
+      onMouseAnnotation(null);
       screenChanged = true;
     }
 
@@ -449,7 +549,12 @@ function applyThrough(
         screenChanged = true;
       } else if (event.type === "resize") {
         session.terminal.resize(event.cols, event.rows);
+        session.cols = event.cols;
+        session.rows = event.rows;
+        onMouseAnnotation(null);
         screenChanged = true;
+      } else if (event.type === "input" && event.inputKind === "mouse" && event.mouse && validMouseAnnotation(event.mouse, session.cols, session.rows)) {
+        onMouseAnnotation({ mouse: event.mouse, cols: session.cols, rows: session.rows });
       }
     }
     session.appliedTime = target;
@@ -471,8 +576,27 @@ export function TerminalPresentation({
   const [html, setHTML] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<Error | null>(null);
+  const [mouseAnnotation, setMouseAnnotation] = useState<ActiveMouseAnnotation | null>(null);
+  const annotationGeneration = useRef(0);
 
   currentTimeRef.current = currentTime;
+
+  const setActiveMouseAnnotation = (annotation: Omit<ActiveMouseAnnotation, "generation"> | null) => {
+    if (!annotation) {
+      setMouseAnnotation(null);
+      return;
+    }
+    annotationGeneration.current += 1;
+    setMouseAnnotation({ ...annotation, generation: annotationGeneration.current });
+  };
+
+  useEffect(() => {
+    if (!mouseAnnotation) return;
+    const timeout = window.setTimeout(() => {
+      setMouseAnnotation((current) => current?.generation === mouseAnnotation.generation ? null : current);
+    }, mouseAnnotationDuration);
+    return () => window.clearTimeout(timeout);
+  }, [mouseAnnotation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -493,13 +617,15 @@ export function TerminalPresentation({
           appliedTime: 0,
           animationFrame: null,
           disposed: false,
+          cols: recording.manifest.cols,
+          rows: recording.manifest.rows,
         };
         sessionRef.current = session;
         setStatus("ready");
         applyThrough(session, currentTimeRef.current, setHTML, (nextError) => {
           setError(nextError);
           setStatus("error");
-        });
+        }, setActiveMouseAnnotation);
         // An empty screen still needs one initial formatter pass.
         formatSession(session, setHTML, (nextError) => {
           setError(nextError);
@@ -529,7 +655,7 @@ export function TerminalPresentation({
     applyThrough(session, currentTime, setHTML, (nextError) => {
       setError(nextError);
       setStatus("error");
-    });
+    }, setActiveMouseAnnotation);
   }, [currentTime, recording]);
 
   const content = useMemo(() => sanitizeGhosttyHTML(html), [html]);
@@ -537,12 +663,14 @@ export function TerminalPresentation({
   return (
     <>
       <style data-record-player-terminal-fonts>{terminalFontFaces}</style>
+      <style data-record-player-mouse-annotation>{mouseAnnotationStyles}</style>
       <div
         className={className}
         role="region"
         aria-label="Terminal playback"
         style={{
           boxSizing: "border-box",
+          position: "relative",
           minHeight: 180,
           overflow: "auto",
           borderRadius: 8,
@@ -565,6 +693,7 @@ export function TerminalPresentation({
           <div role="alert">Unable to render terminal: {error?.message ?? "Unknown error"}</div>
         ) : null}
         {status === "ready" ? content : null}
+        {status === "ready" && mouseAnnotation ? <MouseAnnotation annotation={mouseAnnotation} /> : null}
       </div>
     </>
   );
