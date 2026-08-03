@@ -486,7 +486,8 @@ describe("player-core", () => {
         startedAt: "2026-07-31T12:00:00.000Z",
         stoppedAt: "2026-07-31T12:00:02.000Z",
       },
-      timeline: { startTime: 0, endTime: 2_000, duration: 2_000 },
+      // The manifest spans two seconds, but playback ends with the final event.
+      timeline: { startTime: 0, endTime: 750, duration: 750 },
     });
     expect(recording.terminalEvents[0]).toMatchObject({ type: "output", time: 0 });
     expect(recording.terminalEvents[0].type === "output" && [...recording.terminalEvents[0].bytes]).toEqual([104, 105]);

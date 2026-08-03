@@ -654,7 +654,7 @@ function parseStringMap(value: unknown, context: string): Record<string, string>
   return parsed;
 }
 
-function parseManifest(text: string): { manifest: TweeManifest; duration: number } {
+function parseManifest(text: string): TweeManifest {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -703,18 +703,15 @@ function parseManifest(text: string): { manifest: TweeManifest; duration: number
   }
 
   return {
-    manifest: {
-      version: 1,
-      command,
-      cols,
-      rows,
-      env: parseStringMap(raw.env, "manifest.json.env"),
-      pid: optionalSafeInteger(raw.pid, "manifest.json.pid", 0),
-      host,
-      startedAt,
-      stoppedAt,
-    },
-    duration: startedMs != null && stoppedMs != null ? stoppedMs - startedMs : 0,
+    version: 1,
+    command,
+    cols,
+    rows,
+    env: parseStringMap(raw.env, "manifest.json.env"),
+    pid: optionalSafeInteger(raw.pid, "manifest.json.pid", 0),
+    host,
+    startedAt,
+    stoppedAt,
   };
 }
 
@@ -1077,12 +1074,15 @@ async function parseTweeRecording(
 ): Promise<TweeRecording> {
   const manifestFile = requiredZipFile(zipFiles, "manifest.json");
   const eventsFile = requiredZipFile(zipFiles, "events.jsonl");
-  const { manifest, duration: manifestDuration } = parseManifest(
+  const manifest = parseManifest(
     await readZipText(manifestFile, TWEE_PARSER_LIMITS.manifestBytes, "manifest.json"),
   );
   const terminalEvents = await parseTweeEvents(eventsFile);
-  const eventDuration = terminalEvents.reduce((maximum, event) => Math.max(maximum, event.time), 0);
-  const duration = Math.max(manifestDuration, eventDuration);
+  // Twee event timestamps are elapsed milliseconds from trace start. Playback
+  // ends when the event stream ends; stopped_at only records when the trace was
+  // finalized and may include an arbitrarily long quiet tail after the final
+  // terminal event.
+  const duration = terminalEvents.reduce((maximum, event) => Math.max(maximum, event.time), 0);
 
   return {
     version: 1,
