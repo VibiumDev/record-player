@@ -13,6 +13,7 @@ import {
   TerminalPresentation,
   type GhosttyTerminalFactory,
 } from "./terminal";
+import { advanceTweePlayhead } from "./twee-transport";
 
 export {
   sanitizeGhosttyHTML,
@@ -20,6 +21,7 @@ export {
   type GhosttyTerminalFactory,
   type TerminalPresentationProps,
 } from "./terminal";
+export { advanceTweePlayhead, TWEE_MAX_IDLE_MS } from "./twee-transport";
 
 export interface RecordPlayerProps {
   recording: LoadedRecording;
@@ -204,6 +206,10 @@ export function RecordPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const currentTimeRef = useRef(0);
   const [playing, setPlaying] = useState(false);
+  const tweeEventTimes = useMemo(
+    () => recording.format === "twee" ? recording.terminalEvents.map((event) => event.time) : [],
+    [recording],
+  );
   const counts = useMemo(
     () => events.reduce<Record<string, number>>((acc, event) => {
       const kind = eventKind(recording, event);
@@ -233,7 +239,9 @@ export function RecordPlayer({
     const tick = (now: number) => {
       const elapsed = Math.max(0, now - previous);
       previous = now;
-      const next = Math.min(duration, currentTimeRef.current + elapsed);
+      const next = recording.format === "twee"
+        ? advanceTweePlayhead(currentTimeRef.current, elapsed, tweeEventTimes, duration)
+        : Math.min(duration, currentTimeRef.current + elapsed);
       currentTimeRef.current = next;
       setCurrentTime(next);
       if (next < duration) frame = window.requestAnimationFrame(tick);
@@ -241,7 +249,7 @@ export function RecordPlayer({
     };
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
-  }, [duration, playing]);
+  }, [duration, playing, recording.format, tweeEventTimes]);
 
   return (
     <section

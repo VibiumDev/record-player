@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecordPlayer } from "../packages/player-react";
 import type { LoadedRecording } from "../packages/player-core";
 
@@ -34,6 +34,11 @@ function recording(): LoadedRecording {
 }
 
 describe("RecordPlayer", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("shows playback controls and toggles play state", () => {
     render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
 
@@ -90,5 +95,56 @@ describe("RecordPlayer", () => {
 
     expect(screen.getByText("Screenshot at 1.00s")).toBeInTheDocument();
     expect(screen.getByAltText("Current recording screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,second");
+  });
+
+  it("caps a Twee idle gap on its first animation frame but leaves Vibium timing unchanged", () => {
+    let frame: FrameRequestCallback | undefined;
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    }));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.spyOn(performance, "now").mockReturnValue(0);
+
+    const delayedVibium: LoadedRecording = {
+      ...recording(),
+      timeline: {
+        ...recording().timeline,
+        endTime: 10_000,
+        duration: 10_000,
+        events: [{ id: "late", kind: "screenshot", type: "screencast-frame", title: "Late frame", time: 10_000, data: {} }],
+        screenshots: [{ id: "late", sha1: "late", time: 10_000, mimeType: "image/jpeg", dataUrl: "data:image/jpeg;base64,late" }],
+      },
+    };
+
+    const { unmount } = render(<RecordPlayer recording={delayedVibium} timeline="hidden" inspector="hidden" />);
+    fireEvent.click(screen.getByRole("button", { name: "Play recording" }));
+    expect(frame).toBeDefined();
+    act(() => frame?.(16));
+    expect(screen.getByRole("slider", { name: "Playback position" })).toHaveValue("16");
+    unmount();
+
+    const delayedTwee: LoadedRecording = {
+      version: 1,
+      format: "twee",
+      presentation: { kind: "terminal", initialCols: 80, initialRows: 24 },
+      source: "delayed.twee",
+      files: ["manifest.json", "events.jsonl"],
+      metadata: { fileCount: 2, eventCount: 1 },
+      manifest: { version: 1, command: ["echo", "late"], cols: 80, rows: 24 },
+      terminalEvents: [{ id: "late", type: "output", time: 10_000, bytes: new Uint8Array() }],
+      timeline: {
+        startTime: 0,
+        endTime: 10_000,
+        duration: 10_000,
+        events: [{ id: "late", type: "output", time: 10_000, bytes: new Uint8Array() }],
+      },
+    };
+    frame = undefined;
+    render(<RecordPlayer recording={delayedTwee} timeline="hidden" inspector="hidden" />);
+    fireEvent.click(screen.getByRole("button", { name: "Play recording" }));
+    expect(frame).toBeDefined();
+    act(() => frame?.(16));
+    expect(screen.getByRole("slider", { name: "Playback position" })).toHaveValue("8016");
   });
 });
