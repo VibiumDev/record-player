@@ -2,23 +2,32 @@
 
 **URL**: [player.vibium.dev](https://player.vibium.dev)
 
-A web-based player for Vibium recording files (`.zip`). Drop a `record.zip` onto the page and instantly explore actions, screenshots, console logs, and network requests — no install required.
+A web-based player for Vibium record ZIPs, Playwright `trace.zip` archives, and Twee recordings. Drop a recording onto the page and explore its timeline without installing anything.
 
 ## Features
 
-- **Drag & Drop** — Open any Vibium `record.zip` by dropping it onto the player
-- **Action Timeline** — Step through every recorded action (clicks, fills, navigations, assertions) with timing info
+- **Drag & Drop** — Open Vibium record ZIPs, Playwright `trace.zip` archives, or Twee recordings by dropping them onto the player
+- **Action Timeline** — Step through recorded actions and Playwright test steps with timing info
 - **Screenshot Filmstrip** — Scrub through screencast frames captured during the recording
-- **Console Logs** — View all browser console output (log, warn, error) tied to the recording timeline
-- **Network Inspector** — Browse every network request with method, status, URL, and size
-- **Context Info** — See browser, viewport, and other context options used during the run
-- **Fully Client-Side** — Everything runs in the browser; no data is uploaded anywhere
+- **Console Logs** — View browser console output tied to the recording timeline
+- **Network Inspector** — Browse recorded network activity with method, status, URL, and size
+- **Context Info** — See browser, viewport, and other recorded metadata
+- **Multi-page playback** — Follow recordings that open or use more than one page
+- **Fully Client-Side** — Recording processing runs in the browser; no data is uploaded by the hosted player
 
 ## Getting Started
 
 ### Use it online
 
-Visit **[player.vibium.dev](https://player.vibium.dev)** and drop a Vibium `record.zip` file onto the page.
+Visit **[player.vibium.dev](https://player.vibium.dev)** and drop a Vibium `record.zip`, Playwright `trace.zip`, or Twee `.twee` recording onto the page.
+
+## Recording support
+
+The hosted player accepts Vibium record ZIPs, Playwright `trace.zip` archives, and Twee recordings. For Playwright traces, the MVP includes action and test-step timelines, screenshot playback, console output, network activity, recorded metadata, and multi-page playback.
+
+Full DOM snapshot inspection, source browsing, attachment viewers, and request or response body viewers are intentionally deferred. They are not part of the initial Playwright trace experience.
+
+Recording files can contain sensitive data, including URLs, headers, cookies, console output, source locations, and values entered during a test. Processing is client-side, but review files carefully before opening them on any device or sharing them with others.
 
 ### Run locally
 
@@ -35,11 +44,9 @@ Then open `http://localhost:5173` in your browser.
 
 This repository now exposes a first reusable API slice under `src/packages` while preserving the hosted Vite app:
 
-- `player-core` — pure ZIP loading/parsing (`parseRecording`, `loadRecording`) plus `LoadedRecording`, `TimelineModel`, `RecordingEvent`, `ScreenshotIndex`, and `PlayerError` contracts. URL string loading uses `fetch` with browser `same-origin` credentials by default and supports injected fetch/signal.
-- `player-react` — `RecordPlayer` and `RecordPlayerLoader` React components for rendering a loaded recording or fetching one from `src`.
-- `player-element` — `defineVibiumRecordPlayerElement()` for registering `<vibium-record-player src="/record.zip">`; it dispatches `vibium-player-ready` with `{ recording }` and `vibium-player-error` with `{ error }`. Set its `credentials` attribute or property to `omit`, `same-origin`, or `include` to control recording fetch credentials. The default is `same-origin` for backward compatibility.
-
-Remaining migration work is intentionally staged: the hosted app still uses the existing full-featured studio UI, while future PRs can replace its embedded parser with `player-core`, add formal library build outputs, and migrate the full timeline/compare experience onto these public contracts.
+- `player-core` — ZIP loading and parsing (`parseRecording`, `loadRecording`) for Vibium, Playwright, and Twee recordings, plus the `LoadedRecording`, timeline, screenshot, and error contracts. URL loading uses `fetch` with browser `same-origin` credentials by default and supports an injected fetch implementation and abort signal.
+- `player-react` — `RecordPlayer` and `RecordPlayerLoader` React components for rendering or fetching any supported recording.
+- `player-element` — `defineVibiumRecordPlayerElement()` for registering the backward-compatible `<vibium-record-player src="/record.zip">` element. Despite its existing name, the element accepts Vibium, Playwright, and Twee recordings. It dispatches `vibium-player-ready` with `{ recording }` and `vibium-player-error` with `{ error }`. Set its `credentials` attribute or property to `omit`, `same-origin`, or `include` to control recording fetch credentials. The default is `same-origin` for backward compatibility.
 
 `RecordPlayer` includes a fullscreen control when the browser supports the Fullscreen API. When embedding it in an iframe, grant that iframe fullscreen permission (for example, with the `allowfullscreen` attribute).
 

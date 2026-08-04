@@ -6,6 +6,7 @@ import {
   detectRecordingFormat,
   loadRecording,
   parseRecording,
+  PLAYWRIGHT_PARSER_LIMITS,
   PlayerError,
   TWEE_PARSER_LIMITS,
 } from "../packages/player-core";
@@ -211,6 +212,19 @@ function requireVibium(recording: Awaited<ReturnType<typeof parseRecording>>) {
   return recording;
 }
 
+function requirePlaywright(recording: Awaited<ReturnType<typeof parseRecording>>) {
+  if (recording.format !== "playwright") throw new Error("expected a Playwright recording");
+  return recording;
+}
+
+async function playwrightZip(entries: Record<string, unknown[]>): Promise<Uint8Array> {
+  const zip = new JSZip();
+  for (const [name, lines] of Object.entries(entries)) {
+    zip.file(name, lines.map((line) => JSON.stringify(line)).join("\n"));
+  }
+  return zip.generateAsync({ type: "uint8array" });
+}
+
 describe("player-core", () => {
   it("merges call lifecycles (before/input/after) into single actions", async () => {
     const recording = requireVibium(await parseRecording(await callLifecycleZip()));
@@ -257,6 +271,74 @@ describe("player-core", () => {
     data = rewriteLastCentralName(data, "aaaaaaaaaaaaa", "manifest.json");
 
     expect(await detectRecordingFormat(data)).toBe("twee");
+  });
+
+  it("rejects an oversized reserved Playwright archive before JSZip loads it", async () => {
+    const data = await playwrightZip({
+      "test.trace": [{ type: "context-options", version: 8, origin: "testRunner" }],
+    });
+    const loadAsync = vi.spyOn(JSZip, "loadAsync");
+    try {
+      await expect(parseRecording(data, { playwrightLimits: { zipBytes: 1 } })).rejects.toMatchObject({
+        code: "LIMIT_ERROR",
+        message: expect.stringContaining("1-byte input limit"),
+      });
+      expect(loadAsync).not.toHaveBeenCalled();
+    } finally {
+      loadAsync.mockRestore();
+    }
+  });
+
+  it("keeps numbered streams content-detected after JSZip opens them", async () => {
+    const legacyVibium = await callLifecycleZip();
+    const playwright = await playwrightZip({
+      "0-trace.trace": [{ type: "context-options", version: 8, origin: "library" }],
+    });
+    const loadAsync = vi.spyOn(JSZip, "loadAsync");
+    try {
+      const recording = requireVibium(await parseRecording(legacyVibium, { playwrightLimits: { zipBytes: 1 } }));
+      expect(recording.metadata.traceEventCount).toBeGreaterThan(0);
+      expect(loadAsync).toHaveBeenCalledOnce();
+
+      await expect(parseRecording(playwright, { playwrightLimits: { zipBytes: 1 } })).rejects.toMatchObject({
+        code: "LIMIT_ERROR",
+        message: expect.stringContaining("1-byte input limit"),
+      });
+      expect(loadAsync).toHaveBeenCalledTimes(2);
+    } finally {
+      loadAsync.mockRestore();
+    }
+  });
+
+  it("caps an ambiguous trace.trace archive named trace.zip before JSZip loads it", async () => {
+    const zip = new JSZip();
+    zip.file("trace.trace", JSON.stringify({ type: "before", method: "vibium:page.click", startTime: 1 }));
+    const data = await zip.generateAsync({ type: "uint8array" });
+    const loadAsync = vi.spyOn(JSZip, "loadAsync");
+    try {
+      await expect(parseRecording(data, { source: "TRACE.ZIP", playwrightLimits: { zipBytes: 1 } })).rejects.toMatchObject({
+        code: "LIMIT_ERROR",
+        message: expect.stringContaining("1-byte input limit"),
+      });
+      expect(loadAsync).not.toHaveBeenCalled();
+    } finally {
+      loadAsync.mockRestore();
+    }
+  });
+
+  it("keeps a small Vibium trace.zip named input on the Vibium adapter", async () => {
+    const zip = new JSZip();
+    zip.file("trace.trace", JSON.stringify({ type: "before", callId: "v", method: "vibium:page.click", startTime: 1 }));
+    const data = await zip.generateAsync({ type: "uint8array" });
+    Object.defineProperty(data, "name", { value: "trace.zip" });
+    const loadAsync = vi.spyOn(JSZip, "loadAsync");
+    try {
+      const recording = requireVibium(await parseRecording(data, { playwrightLimits: { zipBytes: data.byteLength } }));
+      expect(recording.metadata.traceEventCount).toBe(1);
+      expect(loadAsync).toHaveBeenCalledOnce();
+    } finally {
+      loadAsync.mockRestore();
+    }
   });
 
   it("does not let a directory name in one ZIP header suppress a reserved name in the other", async () => {
@@ -334,7 +416,7 @@ describe("player-core", () => {
     expect(recording.metadata.traceEventCount).toBeGreaterThan(0);
   });
 
-  it.each([null, 0, TWEE_PARSER_LIMITS.zipBytes + 1, 1.5])(
+  it.each([null, 0, PLAYWRIGHT_PARSER_LIMITS.zipBytes + 1, 1.5])(
     "rejects invalid maxDownloadBytes %s before fetching",
     async (maxDownloadBytes) => {
       const fetchMock = vi.fn();
@@ -392,6 +474,24 @@ describe("player-core", () => {
     await expect(loadRecording(requestedURL, { fetch: fetchMock })).rejects.toMatchObject({
       code: "LIMIT_ERROR",
       message: expect.stringContaining(`${TWEE_PARSER_LIMITS.zipBytes}-byte limit`),
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["https://example.test/trace.ZIP?download=1", ""],
+    ["https://example.test/session.zip", "https://cdn.example.test/trace.zip"],
+  ])("applies the implicit Playwright cap for requested or redirected trace.zip URLs", async (requestedURL, responseURL) => {
+    const cancel = vi.fn();
+    const response = new Response(new ReadableStream<Uint8Array>({ cancel }), {
+      headers: { "Content-Length": String(PLAYWRIGHT_PARSER_LIMITS.zipBytes + 1) },
+    });
+    if (responseURL) Object.defineProperty(response, "url", { value: responseURL });
+    const fetchMock = vi.fn(async () => response);
+
+    await expect(loadRecording(requestedURL, { fetch: fetchMock })).rejects.toMatchObject({
+      code: "LIMIT_ERROR",
+      message: expect.stringContaining(`${PLAYWRIGHT_PARSER_LIMITS.zipBytes}-byte limit`),
     });
     expect(cancel).toHaveBeenCalledOnce();
   });
@@ -711,5 +811,226 @@ describe("player-core", () => {
       code: "LIMIT_ERROR",
       message: expect.stringContaining("event payload limit"),
     });
+  });
+
+  it("parses a page-aware Playwright v8 trace without reading unrelated resources", async () => {
+    const recording = requirePlaywright(await parseRecording(await playwrightZip({
+      "trace.trace": [
+        { type: "context-options", version: 8, origin: "library", contextId: "ctx" },
+        { type: "before", callId: "a", stepId: "s", apiName: "page.click", startTime: 100, pageId: "p1", contextId: "ctx", params: { point: { x: 10, y: 20 } } },
+        { type: "after", callId: "a", endTime: 125, pageId: "p1", contextId: "ctx" },
+        { type: "console", time: 110, pageId: "p1", text: "hello", messageType: "warning", location: { url: "https://example.test/app.js", lineNumber: 4 }, args: ["hello"] },
+        { type: "screencast-frame", sha1: "missing.jpeg", timestamp: 120, pageId: "p1", contextId: "ctx", width: 40, height: 30 },
+        { type: "before", callId: "b", startTime: 130, pageId: "p2", contextId: "ctx" },
+      ],
+      "network.network": [{ type: "resource-snapshot", snapshot: { pageref: "p1", request: { url: "https://example.test", method: "GET" }, response: { status: 200, statusText: "OK", content: { mimeType: "text/html", size: 12 } }, _monotonicTime: 135 } }],
+      "resources/unrelated.bin": [],
+    }), { includeResourceDataUrls: false }));
+
+    expect(recording.contexts.map((context) => context.id)).toEqual(["library:ctx"]);
+    expect(recording.pages.map((page) => page.id)).toEqual(["library:p1", "library:p2"]);
+    expect(recording.timeline.events.map((event) => event.kind)).toContain("console");
+    expect(recording.timeline.events.find((event) => event.kind === "action")?.browser).toMatchObject({
+      pageId: "library:p1", point: { x: 10, y: 20 },
+    });
+    expect(recording.timeline.events.find((event) => event.kind === "console")?.browser).toMatchObject({
+      messageType: "warning", location: { url: "https://example.test/app.js", lineNumber: 4 },
+    });
+    expect(recording.timeline.events.find((event) => event.kind === "network")?.browser?.pageId).toBe("library:p1");
+    expect(recording.timeline.screenshots[0]).toMatchObject({ pageId: "library:p1", contextId: "library:ctx" });
+    expect(recording.metadata.warnings).toContain("Missing screenshot resource missing.jpeg");
+  });
+
+  it("merges test-runner and library actions by stepId and aligns their clocks", async () => {
+    const recording = requirePlaywright(await parseRecording(await playwrightZip({
+      "test.trace": [
+        { type: "context-options", version: 8, origin: "testRunner" },
+        { type: "before", callId: "test", stepId: "same", startTime: 2_000, title: "test step" },
+        { type: "after", callId: "test", endTime: 2_050, error: { message: "failed" } },
+      ],
+      "0-trace.trace": [
+        { type: "context-options", version: 8, origin: "library" },
+        { type: "before", callId: "browser", stepId: "same", startTime: 100, pageId: "page" },
+        { type: "after", callId: "browser", endTime: 120, pageId: "page" },
+      ],
+    })));
+    const actions = recording.timeline.events.filter((event) => event.kind === "action");
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ time: 0, duration: 20, data: { testRunner: { error: { message: "failed" } } } });
+  });
+
+  it("accepts v6/v7 and rejects newer Playwright trace schemas", async () => {
+    for (const version of [6, 7]) {
+      const recording = requirePlaywright(await parseRecording(await playwrightZip({
+        "trace.trace": [{ type: "context-options", version, origin: "library", playwrightVersion: "old" }],
+      })));
+      expect(recording.metadata.schemaVersions).toEqual([version]);
+    }
+    await expect(parseRecording(await playwrightZip({
+      "trace.trace": [{ type: "context-options", version: 9, origin: "library", playwrightVersion: "new" }],
+    }))).rejects.toMatchObject({ code: "PARSE_ERROR", message: expect.stringContaining("v9") });
+  });
+
+  it("detects a library-only header and modernizes v6 test actions", async () => {
+    const libraryOnly = await playwrightZip({
+      "trace.trace": [{ type: "context-options", version: 7, origin: "library" }, { type: "before", callId: "a", startTime: 1 }],
+    });
+    expect(await detectRecordingFormat(libraryOnly)).toBe("playwright");
+    const oldTest = requirePlaywright(await parseRecording(await playwrightZip({
+      "test.trace": [{ type: "before", callId: "old", apiName: "expect.toBe", wallTime: 10, startTime: 10 }],
+    })));
+    const action = oldTest.timeline.events.find((event) => event.kind === "action");
+    expect(action).toMatchObject({ title: "expect.toBe", data: { stepId: "expect.toBe@10" } });
+    expect(oldTest.contexts.map((context) => context.id)).toEqual(["test:context"]);
+  });
+
+  it("keeps synthesized v6 test contexts as testRunner and deduplicates generated stepIds", async () => {
+    const recording = requirePlaywright(await parseRecording(await playwrightZip({
+      "test.trace": [{ type: "before", callId: "test", apiName: "expect.toBe", wallTime: 200, startTime: 200 }],
+      "0-trace.trace": [
+        { type: "context-options", version: 6, origin: "library" },
+        { type: "before", callId: "browser", apiName: "expect.toBe", wallTime: 200, startTime: 100 },
+      ],
+    })));
+    expect(recording.timeline.events.filter((event) => event.kind === "action")).toHaveLength(1);
+    expect(recording.raw.traceEvents.find((event) => (event as { __traceGroup?: string }).__traceGroup === "test" && (event as { type?: string }).type === "context-options"))
+      .toMatchObject({ origin: "testRunner", __traceOrigin: "testRunner" });
+  });
+
+  it("normalizes combined v6 actions and deduplicates them by their generated stepId", async () => {
+    const recording = requirePlaywright(await parseRecording(await playwrightZip({
+      "test.trace": [{
+        type: "action", callId: "test", apiName: "expect.toBe", wallTime: 200,
+        startTime: 200, endTime: 240, error: { message: "assertion" },
+      }],
+      "0-trace.trace": [
+        { type: "context-options", version: 6, origin: "library" },
+        {
+          type: "action", callId: "browser", apiName: "expect.toBe", wallTime: 200,
+          startTime: 100, endTime: 125, pageId: "page", point: { x: 5, y: 6 },
+        },
+      ],
+    })));
+    const actions = recording.timeline.events.filter((event) => event.kind === "action");
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      title: "expect.toBe", time: 0, duration: 25,
+      browser: { pageId: "0:page", point: { x: 5, y: 6 }, error: { message: "assertion" } },
+    });
+  });
+
+  it("rejects a detected non-test Playwright stream without its context/version header", async () => {
+    await expect(parseRecording(await playwrightZip({
+      "trace.trace": [{ type: "before", callId: "a", playwrightVersion: "1.40", startTime: 1 }],
+    }))).rejects.toMatchObject({ code: "PARSE_ERROR", message: expect.stringContaining("context-options/version") });
+  });
+
+  it("folds action logs in order and tolerates orphan logs without raw timeline entries", async () => {
+    const recording = requirePlaywright(await parseRecording(await playwrightZip({
+      "trace.trace": [
+        { type: "context-options", version: 8, origin: "library" },
+        { type: "before", callId: "a", startTime: 1 },
+        { type: "log", callId: "a", time: 2, message: "first" },
+        { type: "log", callId: "missing", time: 3, message: "orphan" },
+        { type: "log", time: 3, message: "orphan without call" },
+        { type: "log", callId: "a", time: 4, message: "second" },
+        { type: "after", callId: "a", endTime: 5 },
+      ],
+    })));
+    const action = recording.timeline.events.find((event) => event.kind === "action");
+    expect(action?.browser?.logs).toEqual([{ time: 2, message: "first" }, { time: 4, message: "second" }]);
+    expect(recording.timeline.events.some((event) => event.type === "log")).toBe(false);
+  });
+
+  it("attaches nested v8 frame snapshots to action phases with viewport and scroll metadata", async () => {
+    const recording = requirePlaywright(await parseRecording(await playwrightZip({
+      "trace.trace": [
+        { type: "context-options", version: 8, origin: "library", contextId: "ctx" },
+        { type: "before", callId: "a", startTime: 1, beforeSnapshot: "before" },
+        { type: "input", callId: "a", inputSnapshot: "input" },
+        { type: "after", callId: "a", endTime: 2, afterSnapshot: "after" },
+        { type: "frame-snapshot", snapshot: { snapshotName: "before", pageId: "page", viewport: { width: 800, height: 600 }, scrollOffset: { x: 2, y: 3 } } },
+        { type: "frame-snapshot", snapshot: { snapshotName: "input", pageId: "page", viewport: { width: 800, height: 600 }, scrollOffset: { x: 4, y: 5 } } },
+        { type: "frame-snapshot", snapshot: { snapshotName: "after", pageId: "page", viewport: { width: 800, height: 600 }, scrollOffset: { x: 6, y: 7 } } },
+      ],
+    })));
+    const action = recording.timeline.events.find((event) => event.kind === "action");
+    expect(action?.browser).toMatchObject({ contextId: "library:ctx", pageId: "library:page" });
+    expect(action?.browser?.snapshots).toEqual([
+      expect.objectContaining({ phase: "before", viewport: { width: 800, height: 600 }, scrollOffset: { x: 2, y: 3 } }),
+      expect.objectContaining({ phase: "input", scrollOffset: { x: 4, y: 5 } }),
+      expect.objectContaining({ phase: "after", scrollOffset: { x: 6, y: 7 } }),
+    ]);
+  });
+
+  it("keeps numbered trace sidecars with their matching context", async () => {
+    const recording = requirePlaywright(await parseRecording(await playwrightZip({
+      "1-trace.network": [{ type: "resource-snapshot", snapshot: { request: { url: "https://one" }, _monotonicTime: 20 } }],
+      "0-trace.trace": [{ type: "context-options", version: 8, origin: "library", contextId: "ctx" }, { type: "before", callId: "same", startTime: 1, pageId: "page" }],
+      "1-trace.trace": [{ type: "context-options", version: 8, origin: "library", contextId: "ctx" }, { type: "before", callId: "same", startTime: 2, pageId: "page" }],
+      "0-trace.network": [{ type: "resource-snapshot", snapshot: { request: { url: "https://zero" }, _monotonicTime: 10 } }],
+    })));
+    const network = recording.timeline.events.filter((event) => event.kind === "network");
+    expect(network.map((event) => event.browser?.contextId).sort()).toEqual(["0:ctx", "1:ctx"]);
+    expect(recording.timeline.events.filter((event) => event.kind === "action").map((event) => event.id)).toEqual(["0:same", "1:same"]);
+  });
+
+  it("uses standard HAR pageref, but never its frame reference, as the page identity", async () => {
+    const recording = requirePlaywright(await parseRecording(await playwrightZip({
+      "trace.trace": [{ type: "context-options", version: 8, origin: "library", contextId: "ctx" }],
+      "network.network": [
+        {
+          type: "resource-snapshot",
+          snapshot: {
+            pageref: "page", _frameref: "frame", _monotonicTime: 1,
+            request: { url: "https://example.test/page" }, response: { status: 200 },
+          },
+        },
+        {
+          type: "resource-snapshot",
+          snapshot: {
+            _frameref: "orphan-frame", _monotonicTime: 2,
+            request: { url: "https://example.test/frame" }, response: { status: 200 },
+          },
+        },
+      ],
+    })));
+
+    const network = recording.timeline.events.filter((event) => event.kind === "network");
+    expect(network.map((event) => event.browser?.pageId)).toEqual(["library:page", undefined]);
+  });
+
+  it("enforces configured Playwright event limits while preserving Vibium fallback", async () => {
+    const trace = [{ type: "context-options", version: 8, origin: "library", playwrightVersion: "1" }, { type: "console", time: 1 }, { type: "console", time: 2 }];
+    await expect(parseRecording(await playwrightZip({ "trace.trace": trace }), { playwrightLimits: { events: 2 } }))
+      .rejects.toMatchObject({ code: "LIMIT_ERROR", message: expect.stringContaining("event") });
+    expect(PLAYWRIGHT_PARSER_LIMITS.resourceBytes).toBeGreaterThan(0);
+  });
+
+  it("enforces the Playwright event budget across trace, network, and stack streams", async () => {
+    const zip = new JSZip();
+    zip.file("test.trace", JSON.stringify({ type: "context-options", version: 8, origin: "testRunner" }));
+    zip.file("test-trace.network", JSON.stringify({ type: "resource-snapshot", snapshot: { _monotonicTime: 1 } }));
+    zip.file("test-trace.stacks", [JSON.stringify({ type: "stack" }), "{not json"].join("\n"));
+
+    await expect(parseRecording(await zip.generateAsync({ type: "uint8array" }), { playwrightLimits: { events: 3 } }))
+      .rejects.toMatchObject({
+        code: "LIMIT_ERROR",
+        message: expect.stringContaining("archive limit"),
+      });
+  });
+
+  it("salvages valid legacy Vibium records around malformed or truncated NDJSON", async () => {
+    const zip = new JSZip();
+    zip.file("trace.trace", [
+      "{truncated",
+      JSON.stringify({ type: "before", callId: "good", method: "vibium:page.click", startTime: 10 }),
+      JSON.stringify({ type: "after", callId: "good", endTime: 20 }),
+      '{"type":"before"',
+    ].join("\n"));
+    const recording = requireVibium(await parseRecording(await zip.generateAsync({ type: "uint8array" })));
+    expect(recording.timeline.events.filter((event) => event.kind === "action")).toMatchObject([
+      { id: "good", time: 0, duration: 10 },
+    ]);
   });
 });

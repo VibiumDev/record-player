@@ -8,6 +8,8 @@ import {
   type TweeEvent,
   type TweeRecording,
   type VibiumRecording,
+  type PlaywrightRecording,
+  type RecordingEvent,
 } from "../player-core";
 import {
   TerminalPresentation,
@@ -60,9 +62,9 @@ function optionVisible(
 }
 
 function eventKind(recording: LoadedRecording, event: LoadedRecording["timeline"]["events"][number]): string {
-  return recording.format === "vibium"
-    ? (event as VibiumRecording["timeline"]["events"][number]).kind
-    : (event as TweeEvent).type;
+  return recording.format === "twee"
+    ? (event as TweeEvent).type
+    : (event as RecordingEvent).kind;
 }
 
 function eventLabel(event: TweeEvent): string {
@@ -79,7 +81,7 @@ function eventLabel(event: TweeEvent): string {
 
 function timelineMarkers(recording: LoadedRecording): LoadedRecording["timeline"]["events"] {
   const events = recording.timeline.events;
-  if (recording.format === "vibium") return events.slice(0, 250);
+  if (recording.format !== "twee") return events.slice(0, 250);
 
   // Terminal output streams are dense. Keep the long-standing 250-marker
   // rendering budget for output, but never hide the input, resize, or exit
@@ -95,28 +97,63 @@ function timelineMarkers(recording: LoadedRecording): LoadedRecording["timeline"
   return [...sampledOutput, ...semantic].sort((left, right) => left.time - right.time);
 }
 
-function VibiumPresentation({
+type BrowserRecording = VibiumRecording | PlaywrightRecording;
+
+function browserPageId(event: RecordingEvent | undefined): string | undefined {
+  return event?.browser?.pageId;
+}
+
+function BrowserPresentation({
   recording,
   currentTime,
+  selectedPageId,
+  onSelectPage,
   isFullscreen = false,
 }: {
-  recording: VibiumRecording;
+  recording: BrowserRecording;
   currentTime: number;
+  selectedPageId?: string;
+  onSelectPage: (pageId: string) => void;
   isFullscreen?: boolean;
 }) {
+  const currentAction = useMemo(() => recording.timeline.events
+    .filter((event): event is RecordingEvent => event.kind === "action" && event.time <= currentTime && currentTime <= (event.endTime ?? event.time))
+    .reduce<RecordingEvent | undefined>((latest, event) =>
+      !latest || event.time >= latest.time ? event : latest, undefined), [currentTime, recording.timeline.events]);
+  const pageIds = useMemo(() => {
+    const ids = new Set<string>();
+    recording.timeline.screenshots.forEach((screenshot) => {
+      if (screenshot.pageId) ids.add(screenshot.pageId);
+    });
+    recording.timeline.events.forEach((event) => {
+      const pageId = browserPageId(event as RecordingEvent);
+      if (pageId) ids.add(pageId);
+    });
+    return [...ids];
+  }, [recording.timeline.events, recording.timeline.screenshots]);
+  const latestPageId = useMemo(() => {
+    const candidates = [
+      ...recording.timeline.screenshots.map((screenshot) => ({ pageId: screenshot.pageId, time: screenshot.time })),
+      ...recording.timeline.events.map((event) => ({ pageId: browserPageId(event as RecordingEvent), time: event.time })),
+    ].filter((candidate): candidate is { pageId: string; time: number } => Boolean(candidate.pageId) && candidate.time <= currentTime);
+    return candidates.reduce<{ pageId: string; time: number } | undefined>((latest, candidate) =>
+      !latest || candidate.time >= latest.time ? candidate : latest, undefined)?.pageId ?? pageIds[0];
+  }, [currentTime, pageIds, recording.timeline.events, recording.timeline.screenshots]);
+  // An action owns the display while it is current; an explicit page choice is
+  // otherwise stable, and the latest observed page is the final fallback.
+  const activePageId = browserPageId(currentAction) ?? selectedPageId ?? latestPageId;
   const screenshots = useMemo(
-    () => recording.timeline.screenshots.filter((screenshot) => screenshot.dataUrl),
-    [recording.timeline.screenshots],
+    () => recording.timeline.screenshots.filter((screenshot) =>
+      screenshot.dataUrl && (!activePageId || screenshot.pageId === activePageId)),
+    [activePageId, recording.timeline.screenshots],
   );
   const currentScreenshot = useMemo(() => {
-    if (!screenshots.length) return undefined;
-    return screenshots.reduce(
-      (current, screenshot) => (screenshot.time <= currentTime ? screenshot : current),
-      screenshots[0],
-    );
+    return screenshots.filter((screenshot) => screenshot.time <= currentTime)
+      .reduce<typeof screenshots[number] | undefined>((current, screenshot) =>
+        !current || screenshot.time >= current.time ? screenshot : current, undefined);
   }, [currentTime, screenshots]);
 
-  if (!currentScreenshot?.dataUrl) return null;
+  if (!currentScreenshot?.dataUrl) return <div role="status">No screenshot for the selected page.</div>;
   return (
     <figure
       data-testid="screenshot-presentation"
@@ -144,7 +181,16 @@ function VibiumPresentation({
       />
       <figcaption style={{ padding: 8, fontSize: 12, color: "#5f6b7a" }}>
         Screenshot at {formatMs(currentScreenshot.time)}
+        {activePageId ? ` · ${activePageId}` : ""}
       </figcaption>
+      {pageIds.length > 1 ? (
+        <label style={{ padding: "0 8px 8px", fontSize: 12, color: "#5f6b7a" }}>
+          Page
+          <select aria-label="Recording page" value={activePageId ?? ""} onChange={(event) => onSelectPage(event.currentTarget.value)} style={{ marginLeft: 6 }}>
+            {pageIds.map((pageId) => <option key={pageId} value={pageId}>{pageId}</option>)}
+          </select>
+        </label>
+      ) : null}
     </figure>
   );
 }
@@ -213,6 +259,7 @@ export function RecordPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const currentTimeRef = useRef(0);
   const [playing, setPlaying] = useState(false);
+  const [selectedPageId, setSelectedPageId] = useState<string | undefined>();
   const rootRef = useRef<HTMLElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
@@ -244,6 +291,7 @@ export function RecordPlayer({
     currentTimeRef.current = 0;
     setCurrentTime(0);
     setPlaying(false);
+    setSelectedPageId(undefined);
   }, [recording]);
 
   useEffect(() => {
@@ -329,7 +377,7 @@ export function RecordPlayer({
           <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Record Player</h2>
           <div style={{ color: "#5f6b7a", fontSize: 13, overflowWrap: "anywhere" }}>
             {recording.source ? `${recording.source} · ` : ""}
-            <strong>{recording.format === "twee" ? "Twee" : "Vibium"}</strong>
+            <strong>{recording.format === "twee" ? "Twee" : recording.format === "playwright" ? "Playwright" : "Vibium"}</strong>
             {` · ${recording.metadata.fileCount} files · ${recording.metadata.eventCount} events · ${formatMs(duration)}`}
           </div>
         </div>
@@ -419,7 +467,7 @@ export function RecordPlayer({
             style={isFullscreen ? { flex: "1 1 0", minHeight: 0 } : undefined}
           />
         ) : (
-          <VibiumPresentation recording={recording} currentTime={currentTime} isFullscreen={isFullscreen} />
+          <BrowserPresentation recording={recording} currentTime={currentTime} selectedPageId={selectedPageId} onSelectPage={setSelectedPageId} isFullscreen={isFullscreen} />
         )}
       </div>
 
@@ -470,7 +518,10 @@ export function RecordPlayer({
                 >
                   <time>{formatMs(event.time)}</time>
                   <span>{event.kind}</span>
-                  <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{event.title ?? event.method ?? event.type ?? event.id}</span>
+                  <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                    {event.title ?? event.method ?? event.type ?? event.id}
+                    {event.browser?.pageId ? ` · ${event.browser.pageId}` : ""}
+                  </span>
                 </li>
               ))}
             </ol>

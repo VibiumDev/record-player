@@ -139,6 +139,28 @@ describe("player-element", () => {
     act(() => document.body.removeChild(element));
   });
 
+  it("keeps the ready detail shape when loading a Playwright trace", async () => {
+    defineVibiumRecordPlayerElement();
+    const zip = new JSZip();
+    zip.file("trace.trace", [
+      { type: "context-options", version: 8, origin: "library", contextId: "context", options: {} },
+      { type: "before", callId: "call", title: "page.click", startTime: 0, contextId: "context", pageId: "page" },
+      { type: "after", callId: "call", endTime: 10, contextId: "context", pageId: "page" },
+      { type: "screencast-frame", timestamp: 0, sha1: "frame.jpeg", contextId: "context", pageId: "page" },
+    ].map(JSON.stringify).join("\n"));
+    zip.file("resources/frame.jpeg", new Uint8Array([0xff, 0xd8, 0xff]));
+    const recording = await zip.generateAsync({ type: "uint8array" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(recording, { status: 200, statusText: "OK" })));
+    const readyHandler = vi.fn();
+    const element = document.createElement("vibium-record-player");
+    element.setAttribute("src", "https://example.test/trace.zip");
+    element.addEventListener("vibium-player-ready", readyHandler);
+    act(() => document.body.appendChild(element));
+    await waitFor(() => expect(readyHandler).toHaveBeenCalledTimes(1));
+    expect(readyHandler.mock.calls[0][0].detail.recording).toMatchObject({ version: 1, format: "playwright" });
+    act(() => document.body.removeChild(element));
+  });
+
   it("upgrades and dispatches an error event when loading fails", async () => {
     defineVibiumRecordPlayerElement();
     vi.stubGlobal("fetch", vi.fn(async () => okZipResponse()));

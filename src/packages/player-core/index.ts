@@ -12,12 +12,53 @@ export interface RecordingEvent {
   endTime?: number;
   duration?: number;
   data: Record<string, unknown>;
+  /** Portable browser fields; `data` retains the source record for advanced consumers. */
+  browser?: BrowserEventDetails;
+}
+
+export interface BrowserEventDetails {
+  contextId?: string;
+  pageId?: string;
+  apiName?: string;
+  params?: Record<string, unknown>;
+  point?: { x: number; y: number };
+  box?: Record<string, unknown>;
+  error?: unknown;
+  snapshot?: Record<string, unknown>;
+  snapshots?: BrowserSnapshotDetails[];
+  logs?: Array<{ time?: number; message?: string }>;
+  text?: string;
+  messageType?: string;
+  location?: Record<string, unknown>;
+  details?: unknown;
+  args?: unknown[];
+  stack?: unknown;
+  url?: string;
+  requestMethod?: string;
+  startTime?: number;
+  status?: number;
+  statusText?: string;
+  mimeType?: string;
+  size?: number;
+}
+
+export interface BrowserSnapshotDetails {
+  phase: "before" | "input" | "after";
+  name: string;
+  contextId?: string;
+  pageId?: string;
+  viewport?: Record<string, unknown>;
+  scrollOffset?: unknown;
+  snapshot: Record<string, unknown>;
 }
 
 export interface ScreenshotIndex {
   id: string;
   sha1: string;
   time: number;
+  /** Browser identity is optional for legacy Vibium recordings. */
+  contextId?: string;
+  pageId?: string;
   width?: number;
   height?: number;
   mimeType: string;
@@ -82,6 +123,38 @@ export interface VibiumRecording extends RecordingBase<TimelineModel> {
   raw: {
     traceEvents: unknown[];
     networkEvents: unknown[];
+  };
+}
+
+/** A page discovered in a browser trace. IDs are stable within a recording. */
+export interface BrowserTracePage {
+  id: string;
+  contextId?: string;
+  openerId?: string;
+  url?: string;
+}
+
+export interface BrowserTraceContext {
+  id: string;
+  options?: unknown;
+}
+
+export interface PlaywrightRecording extends RecordingBase<TimelineModel> {
+  format: "playwright";
+  presentation: ScreenshotPresentation;
+  metadata: RecordingMetadata & {
+    traceEventCount: number;
+    networkEventCount: number;
+    schemaVersions: number[];
+    warnings: string[];
+  };
+  contexts: BrowserTraceContext[];
+  pages: BrowserTracePage[];
+  /** Raw records are retained for inspection; binary resources are not decoded here. */
+  raw: {
+    traceEvents: unknown[];
+    networkEvents: unknown[];
+    stacks: unknown[];
   };
 }
 
@@ -155,7 +228,7 @@ export interface TweeRecording extends RecordingBase<RecordingTimeline<TweeEvent
   terminalEvents: TweeEvent[];
 }
 
-export type RecordingDocument = VibiumRecording | TweeRecording;
+export type RecordingDocument = VibiumRecording | PlaywrightRecording | TweeRecording;
 export type RecordingFormat = RecordingDocument["format"];
 
 // Keep the original public name while allowing callers to discriminate the
@@ -172,6 +245,27 @@ export const TWEE_PARSER_LIMITS = Object.freeze({
   terminalColumns: 1_000,
   terminalRows: 1_000,
   terminalCells: 1_000_000,
+});
+
+/** Defaults used only after an archive has been identified as Playwright. */
+export interface PlaywrightParserLimits {
+  zipBytes: number;
+  files: number;
+  expandedBytes: number;
+  streamBytes: number;
+  lineBytes: number;
+  events: number;
+  resourceBytes: number;
+}
+
+export const PLAYWRIGHT_PARSER_LIMITS: Readonly<PlaywrightParserLimits> = Object.freeze({
+  zipBytes: 128 * 1024 * 1024,
+  files: 20_000,
+  expandedBytes: 512 * 1024 * 1024,
+  streamBytes: 128 * 1024 * 1024,
+  lineBytes: 8 * 1024 * 1024,
+  events: 1_000_000,
+  resourceBytes: 64 * 1024 * 1024,
 });
 
 export type PlayerErrorCode =
@@ -199,6 +293,8 @@ export class PlayerError extends Error {
 export interface ParseRecordingOptions {
   source?: string;
   includeResourceDataUrls?: boolean;
+  /** Override conservative limits for a known trusted Playwright archive. */
+  playwrightLimits?: Partial<PlaywrightParserLimits>;
 }
 
 export interface LoadRecordingOptions extends ParseRecordingOptions {
@@ -210,32 +306,31 @@ export interface LoadRecordingOptions extends ParseRecordingOptions {
 
 type ZipFile = JSZip.JSZipObject;
 
-function parseNDJSON(text: string): unknown[] {
-  const results: unknown[] = [];
-  for (const [index, line] of text.split("\n").entries()) {
-    if (!line.trim()) continue;
-    try {
-      results.push(JSON.parse(line));
-    } catch (cause) {
-      throw new PlayerError("PARSE_ERROR", `Invalid NDJSON on line ${index + 1}`, { cause });
-    }
-  }
-  return results;
-}
-
-function parseMaybeJSON(text: string): unknown[] {
+// Vibium archives in the wild can end with a partially-written JSON line.
+// Keep the historical studio behavior: salvage complete records instead of
+// failing the whole playback. Playwright uses parsePlaywrightNDJSON and stays
+// deliberately strict.
+function parseTolerantVibiumJSON(text: string): unknown[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(trimmed);
       return Array.isArray(parsed) ? parsed : [parsed];
     } catch {
-      // Playwright/Vibium .trace and .network files are usually NDJSON, which
-      // also starts with "{". Fall through to line-oriented parsing.
+      // This may be NDJSON, or a truncated final object. Process each line.
     }
   }
-  return parseNDJSON(text);
+  const events: unknown[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      events.push(JSON.parse(line));
+    } catch {
+      // Intentionally tolerate malformed legacy Vibium records.
+    }
+  }
+  return events;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -256,6 +351,8 @@ function inputByteLength(data: ArrayBuffer | ArrayBufferView | Blob): number {
 
 interface ZipPreflightResult {
   isTwee: boolean;
+  /** Reserved test.trace selects the Playwright adapter without content reads. */
+  isPlaywright: boolean;
   entryCount: number;
 }
 
@@ -413,6 +510,7 @@ async function preflightZip(data: ArrayBuffer | ArrayBufferView | Blob): Promise
   let entryCount = 0;
   let manifestCount = 0;
   let eventsCount = 0;
+  let hasReservedPlaywrightTrace = false;
   let firstOversizedEntry: string | undefined;
   while (cursor < centralEnd) {
     const header = await reader.read(cursor, 46);
@@ -494,6 +592,13 @@ async function preflightZip(data: ArrayBuffer | ArrayBufferView | Blob): Promise
       (!localIsDirectory && normalizedLocalName === "events.jsonl") ||
       (!centralIsDirectory && normalizedCentralName === "events.jsonl")
     ) eventsCount++;
+    // `test.trace` at the archive root is reserved by Playwright Test. As
+    // with Twee's reserved files, accept either header's non-directory view
+    // so a forged counterpart cannot bypass preflight classification.
+    if (
+      (!localIsDirectory && normalizedLocalName === "test.trace") ||
+      (!centralIsDirectory && normalizedCentralName === "test.trace")
+    ) hasReservedPlaywrightTrace = true;
     if (uncompressedSize > TWEE_PARSER_LIMITS.expandedFileBytes && firstOversizedEntry == null) {
       firstOversizedEntry = [...names].find(Boolean) || "archive entry";
     }
@@ -526,7 +631,11 @@ async function preflightZip(data: ArrayBuffer | ArrayBufferView | Blob): Promise
   if (isTwee && (manifestCount > 1 || eventsCount > 1)) {
     throw new PlayerError("PARSE_ERROR", "Twee recording contains duplicate manifest.json or events.jsonl entries");
   }
-  return { isTwee, entryCount };
+  return {
+    isTwee,
+    isPlaywright: hasReservedPlaywrightTrace,
+    entryCount,
+  };
 }
 
 type ZipFileWithInternals = ZipFile & {
@@ -602,6 +711,32 @@ async function readZipText(file: ZipFile, limit: number, label: string): Promise
     throw new PlayerError("PARSE_ERROR", `${label} is not valid UTF-8`, { cause });
   }
   return chunks.join("");
+}
+
+async function readZipBase64(file: ZipFile, limit: number, label: string): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  await forEachZipChunk(file, limit, label, (chunk) => {
+    chunks.push(chunk.slice());
+    length += chunk.byteLength;
+  });
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  // Avoid a Node-only Buffer dependency: player-core also runs in browsers.
+  // Every non-final chunk is divisible by three, so independently encoded
+  // chunks concatenate into one valid base64 payload.
+  let result = "";
+  for (let index = 0; index < bytes.byteLength; index += 32_766) {
+    const end = Math.min(bytes.byteLength, index + 32_766);
+    let binary = "";
+    for (let cursor = index; cursor < end; cursor++) binary += String.fromCharCode(bytes[cursor]);
+    result += btoa(binary);
+  }
+  return result;
 }
 
 function optionalString(value: unknown, context: string): string | undefined {
@@ -925,8 +1060,8 @@ function normalizeEvent(raw: unknown, index: number): RecordingEvent {
   const response = asRecord(snapshot.response);
 
   let kind: RecordingEventKind = "raw";
-  if (type === "before" || type === "after" || type === "input") kind = "action";
-  if (type === "event" && method === "log.entryAdded") kind = "console";
+  if (type === "before" || type === "after" || type === "input" || type === "action") kind = "action";
+  if ((type === "event" && method === "log.entryAdded") || type === "console") kind = "console";
   if (type === "screencast-frame") kind = "screenshot";
   if (method?.startsWith("network.") || evt.snapshot) kind = "network";
   if (type === "before" && evt.class === "Tracing") kind = "group";
@@ -942,6 +1077,35 @@ function normalizeEvent(raw: unknown, index: number): RecordingEvent {
   ) ?? 0;
   const endTime = numberFrom(evt.endTime, snapshot.time != null ? time + Number(snapshot.time) : undefined);
   const title = eventTitle(evt) || (request.url as string | undefined) || (response.url as string | undefined);
+  const point = asRecord(evt.point ?? params.point);
+  const pointX = numberFrom(point.x);
+  const pointY = numberFrom(point.y);
+  const consoleMessage = asRecord(evt.message);
+  const browser: BrowserEventDetails = {
+    contextId: eventContextId(evt),
+    pageId: eventPageId(evt),
+    apiName: typeof evt.title === "string" ? evt.title : typeof evt.apiName === "string" ? evt.apiName : method,
+    params: Object.keys(params).length ? params : undefined,
+    point: pointX != null && pointY != null ? { x: pointX, y: pointY } : undefined,
+    box: Object.keys(asRecord(evt.box ?? params.box)).length ? asRecord(evt.box ?? params.box) : undefined,
+    error: evt.error,
+    snapshot: Object.keys(snapshot).length ? snapshot : undefined,
+    text: typeof evt.text === "string" ? evt.text : typeof consoleMessage.text === "string" ? consoleMessage.text : undefined,
+    messageType: typeof evt.messageType === "string" ? evt.messageType : typeof consoleMessage.type === "string" ? consoleMessage.type : undefined,
+    location: Object.keys(asRecord(evt.location)).length ? asRecord(evt.location)
+      : Object.keys(asRecord(consoleMessage.location)).length ? asRecord(consoleMessage.location)
+      : undefined,
+    details: evt.details ?? consoleMessage,
+    args: Array.isArray(evt.args) ? evt.args : Array.isArray(consoleMessage.args) ? consoleMessage.args : undefined,
+    stack: evt.stack ?? consoleMessage.stack,
+    url: typeof request.url === "string" ? request.url : typeof response.url === "string" ? response.url : undefined,
+    requestMethod: typeof request.method === "string" ? request.method : undefined,
+    startTime: time,
+    status: numberFrom(response.status),
+    statusText: typeof response.statusText === "string" ? response.statusText : undefined,
+    mimeType: typeof asRecord(response.content).mimeType === "string" ? asRecord(response.content).mimeType as string : undefined,
+    size: numberFrom(asRecord(response.content).size, response.bodySize),
+  };
 
   return {
     id: String(evt.callId ?? evt.id ?? `${kind}-${index}`),
@@ -953,6 +1117,7 @@ function normalizeEvent(raw: unknown, index: number): RecordingEvent {
     endTime,
     duration: endTime != null ? Math.max(0, endTime - time) : undefined,
     data: evt,
+    browser,
   };
 }
 
@@ -966,6 +1131,7 @@ function mergeCallLifecycles(events: RecordingEvent[]): RecordingEvent[] {
   for (const event of events) {
     const callId = asRecord(event.data).callId;
     if (typeof callId !== "string" || callId === "") {
+      if (event.type === "log") continue;
       merged.push(event);
       continue;
     }
@@ -974,8 +1140,14 @@ function mergeCallLifecycles(events: RecordingEvent[]): RecordingEvent[] {
       merged.push(event);
       continue;
     }
-    const opener = event.type === "after" || event.type === "input" ? openByCallId.get(callId) : undefined;
+    const opener = event.type === "after" || event.type === "input" || event.type === "log"
+      ? openByCallId.get(callId)
+      : undefined;
     if (!opener) {
+      // `log` records are action details, never independently playable
+      // timeline entries. Corrupted traces can contain orphans; tolerate
+      // those without adding a misleading raw event.
+      if (event.type === "log") continue;
       merged.push(event);
       continue;
     }
@@ -985,11 +1157,58 @@ function mergeCallLifecycles(events: RecordingEvent[]): RecordingEvent[] {
         opener.duration = Math.max(0, event.endTime - opener.time);
       }
       opener.data = { ...opener.data, after: event.data };
-    } else {
+      const after = asRecord(event.data);
+      const point = asRecord(after.point);
+      const x = numberFrom(point.x);
+      const y = numberFrom(point.y);
+      opener.browser = {
+        ...opener.browser,
+        point: x != null && y != null ? { x, y } : opener.browser?.point,
+        box: Object.keys(asRecord(after.box)).length ? asRecord(after.box) : opener.browser?.box,
+        error: after.error ?? opener.browser?.error,
+      };
+    } else if (event.type === "input") {
       opener.data = { ...opener.data, input: event.data };
+      const input = asRecord(event.data);
+      const point = asRecord(input.point);
+      const x = numberFrom(point.x);
+      const y = numberFrom(point.y);
+      opener.browser = {
+        ...opener.browser,
+        point: x != null && y != null ? { x, y } : opener.browser?.point,
+        box: Object.keys(asRecord(input.box)).length ? asRecord(input.box) : opener.browser?.box,
+      };
+    } else {
+      const log = asRecord(event.data);
+      const logs = Array.isArray(opener.browser?.logs) ? [...opener.browser.logs] : [];
+      const sourceLogs = Array.isArray(asRecord(opener.data).logs) ? asRecord(opener.data).logs : [];
+      logs.push({
+        time: numberFrom(log.time),
+        message: typeof log.message === "string" ? log.message : undefined,
+      });
+      opener.data = { ...opener.data, logs: [...sourceLogs, event.data] };
+      opener.browser = { ...opener.browser, logs };
     }
   }
   return merged;
+}
+
+function eventPageId(event: Record<string, unknown>): string | undefined {
+  const params = asRecord(event.params);
+  const snapshot = asRecord(event.snapshot);
+  const frame = asRecord(event.frame);
+  for (const value of [event.pageId, params.pageId, snapshot.pageId, snapshot.pageref, frame.pageId]) {
+    if (typeof value === "string" && value) return value;
+  }
+  return undefined;
+}
+
+function eventContextId(event: Record<string, unknown>): string | undefined {
+  const params = asRecord(event.params);
+  for (const value of [event.contextId, params.contextId]) {
+    if (typeof value === "string" && value) return value;
+  }
+  return undefined;
 }
 
 function extractScreenshotRefs(events: unknown[], resources: Map<string, { mimeType: string; dataUrl?: string }>): ScreenshotIndex[] {
@@ -1002,6 +1221,8 @@ function extractScreenshotRefs(events: unknown[], resources: Map<string, { mimeT
       id: `screenshot-${index}`,
       sha1: evt.sha1,
       time: numberFrom(evt.timestamp, evt.time) ?? 0,
+      contextId: eventContextId(evt),
+      pageId: eventPageId(evt),
       width: numberFrom(evt.width),
       height: numberFrom(evt.height),
       mimeType: resource?.mimeType ?? screenshotMime(evt.sha1),
@@ -1016,7 +1237,7 @@ async function readEvents(files: string[], zipFiles: Record<string, ZipFile>, su
   for (const name of files) {
     if (!name.endsWith(suffix) || zipFiles[name].dir) continue;
     const text = await zipFiles[name].async("string");
-    events.push(...parseMaybeJSON(text));
+    events.push(...parseTolerantVibiumJSON(text));
   }
   return events;
 }
@@ -1140,6 +1361,484 @@ async function parseVibiumRecording(
   };
 }
 
+type PlaywrightLimits = PlaywrightParserLimits;
+
+function resolvedPlaywrightLimits(overrides: ParseRecordingOptions["playwrightLimits"]): PlaywrightLimits {
+  const limits = { ...PLAYWRIGHT_PARSER_LIMITS, ...overrides };
+  for (const [name, value] of Object.entries(limits)) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new PlayerError("INVALID_INPUT", `playwrightLimits.${name} must be a positive safe integer`);
+    }
+  }
+  return limits;
+}
+
+function assertPlaywrightZipBytes(inputBytes: number, limits: PlaywrightLimits): void {
+  if (inputBytes > limits.zipBytes) {
+    throw new PlayerError("LIMIT_ERROR", `Playwright recording ZIP exceeds the ${limits.zipBytes}-byte input limit`);
+  }
+}
+
+function hasPlaywrightSourceName(data: ArrayBuffer | Uint8Array | Blob, source: unknown): boolean {
+  const isTraceZip = (name: unknown) => typeof name === "string" && name.toLowerCase() === "trace.zip";
+  if (isTraceZip(source)) return true;
+  // File extends Blob in browsers. Read the optional runtime field rather
+  // than relying on File existing in browser-like hosts.
+  return isTraceZip((data as { name?: unknown }).name);
+}
+
+async function readZipPrefix(file: ZipFile, limit: number): Promise<string> {
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  const stream = (file as ZipFileWithInternals).internalStream("uint8array");
+  return new Promise<string>((resolve, reject) => {
+    let text = "";
+    let total = 0;
+    let settled = false;
+    stream.on("data", (chunk) => {
+      if (settled) return;
+      const used = chunk.subarray(0, Math.max(0, limit - total));
+      total += used.byteLength;
+      text += decoder.decode(used, { stream: total < limit });
+      if (total >= limit) {
+        settled = true;
+        stream.pause();
+        resolve(text);
+      }
+    });
+    stream.on("error", (error) => {
+      if (!settled) reject(error);
+    });
+    stream.on("end", () => {
+      if (!settled) {
+        settled = true;
+        resolve(text + decoder.decode());
+      }
+    });
+    stream.resume();
+  });
+}
+
+function isPlaywrightTraceText(text: string): boolean {
+  // `origin: testRunner` is definitive. Library traces do not all carry an
+  // origin in older schema versions, so accept Playwright's version marker
+  // unless this is explicitly a Vibium recording. Unknown archives retain
+  // the historical Vibium fallback for compatibility.
+  if (/"libraryName"\s*:\s*"vibium"/.test(text) || /"(?:method|apiName)"\s*:\s*"vibium:/.test(text)) return false;
+  if (/"origin"\s*:\s*"testRunner"/.test(text) || /"playwrightVersion"\s*:/.test(text)) return true;
+  // A v6-v8 context header is the only reliable marker for a library trace
+  // with snapshots and console capture disabled. Check it only after the
+  // explicit Vibium markers above, retaining the legacy fallback otherwise.
+  if (/"type"\s*:\s*"context-options"/.test(text) && /"version"\s*:\s*[6-9]\b/.test(text)) return true;
+  return /"type"\s*:\s*"frame-snapshot"/.test(text) || /"type"\s*:\s*"console"/.test(text);
+}
+
+async function archiveLooksLikePlaywright(files: string[], zipFiles: Record<string, ZipFile>): Promise<boolean> {
+  for (const name of files) {
+    if (!name.endsWith(".trace") || zipFiles[name].dir) continue;
+    // `test.trace` is reserved by Playwright Test and v6 test traces can lack
+    // the context/version header that all other detection paths rely on.
+    if (name === "test.trace") return true;
+    if (isPlaywrightTraceText(await readZipPrefix(zipFiles[name], 64 * 1024))) return true;
+  }
+  return false;
+}
+
+function parsePlaywrightNDJSON(
+  text: string,
+  name: string,
+  limits: PlaywrightLimits,
+  eventBudget: { remaining: number },
+): unknown[] {
+  const events: unknown[] = [];
+  for (const [index, line] of text.split("\n").entries()) {
+    if (line.length > limits.lineBytes) {
+      throw new PlayerError("LIMIT_ERROR", `${name} line ${index + 1} exceeds the ${limits.lineBytes}-byte limit`);
+    }
+    if (!line.trim()) continue;
+    // This is deliberately checked before parsing/retaining the next record.
+    // The budget is shared by trace, network and stack streams for the whole
+    // archive, so a later sidecar cannot temporarily exceed it.
+    if (eventBudget.remaining <= 0) {
+      throw new PlayerError("LIMIT_ERROR", `Playwright recording exceeds the ${limits.events}-event archive limit`);
+    }
+    try {
+      const value: unknown = JSON.parse(line);
+      eventBudget.remaining--;
+      events.push(requireRecord(value, `${name} line ${index + 1}`));
+    } catch (cause) {
+      if (cause instanceof PlayerError) throw cause;
+      throw new PlayerError("PARSE_ERROR", `Invalid Playwright NDJSON in ${name} on line ${index + 1}`, { cause });
+    }
+  }
+  return events;
+}
+
+function playwrightGroupForTrace(name: string): string {
+  if (name === "test.trace") return "test";
+  const match = /^(.*?)-trace\.trace$/.exec(name);
+  return match?.[1] || "library";
+}
+
+function playwrightGroupForSidecar(name: string): string | undefined {
+  const standard = /^(.*?)-trace\.(?:network|stacks)$/.exec(name);
+  if (standard) return standard[1] || "library";
+  const legacy = /^(.*?)-(?:network\.network|stacks\.stacks)$/.exec(name);
+  return legacy?.[1] || (name === "network.network" || name === "stacks.stacks" ? "library" : undefined);
+}
+
+function namespacePlaywrightRecord(
+  value: unknown,
+  group: string,
+  origin: string,
+  defaultContextId?: string,
+): Record<string, unknown> {
+  const event = { ...requireRecord(value, "Playwright record") };
+  if (defaultContextId && typeof event.contextId !== "string") event.contextId = defaultContextId;
+  const namespace = (key: string) => {
+    if (typeof event[key] === "string" && event[key]) event[key] = `${group}:${event[key]}`;
+  };
+  // stepId deliberately stays un-namespaced: the test runner and browser
+  // trace use it as their join key.
+  for (const key of [
+    "callId", "parentId", "id", "contextId", "pageId", "frameId", "openerId",
+    "beforeSnapshot", "inputSnapshot", "afterSnapshot",
+  ]) namespace(key);
+  const params = asRecord(event.params);
+  if (Object.keys(params).length) {
+    const copied = { ...params };
+    if (defaultContextId && typeof copied.contextId !== "string") copied.contextId = defaultContextId;
+    for (const key of ["contextId", "pageId", "frameId", "openerId"]) {
+      if (typeof copied[key] === "string" && copied[key]) copied[key] = `${group}:${copied[key]}`;
+    }
+    event.params = copied;
+  }
+  const snapshot = asRecord(event.snapshot);
+  if (Object.keys(snapshot).length) {
+    const copied = { ...snapshot };
+    if (defaultContextId && typeof copied.contextId !== "string") copied.contextId = defaultContextId;
+    for (const key of ["contextId", "pageId", "pageref", "frameId", "snapshotName", "name"]) {
+      if (typeof copied[key] === "string" && copied[key]) copied[key] = `${group}:${copied[key]}`;
+    }
+    event.snapshot = copied;
+  }
+  event.__traceGroup = group;
+  event.__traceOrigin = origin;
+  return event;
+}
+
+function playwrightSchemaVersion(events: unknown[], name: string): number {
+  const context = events.map(asRecord).find((event) => event.type === "context-options");
+  const value = context?.version ?? events.map(asRecord).find((event) => typeof event.version === "number")?.version;
+  // v6 test-runner streams had no context header. The file name is part of
+  // Playwright's archive contract, so it is safe to apply that one legacy
+  // default only to test.trace; a library stream without a version is v8.
+  if (value == null && name !== "test.trace") {
+    throw new PlayerError("PARSE_ERROR", `${name} is missing its Playwright context-options/version header`);
+  }
+  const version = typeof value === "number" && Number.isInteger(value) ? value : 6;
+  if (version > 8) throw new PlayerError("PARSE_ERROR", `Unsupported Playwright trace schema v${version}; supported versions are v6-v8`);
+  if (version < 6) throw new PlayerError("PARSE_ERROR", `Unsupported Playwright trace schema v${version}; supported versions are v6-v8`);
+  return version;
+}
+
+// The fields consumed by Record Player (call lifecycles, screencast frames,
+// console, snapshots and HAR entries) are stable across v6-v8. Older traces
+// may use `timestamp` for the screencast time; normalization already accepts
+// both forms. Keep modernization explicit so schema additions do not silently
+// become supported without a compatibility decision.
+function modernizePlaywrightEvents(events: unknown[], version: number): unknown[] {
+  let modernized = events.map((event) => ({ ...asRecord(event) }));
+  if (version === 6) {
+    // Playwright's official v6->v7 modernization synthesizes the missing
+    // test-runner context header, adds the new clock/context fields and makes
+    // a stable step join key from the v6 action identity.
+    const synthesizedTestContext = modernized[0]?.type !== "context-options";
+    if (synthesizedTestContext) {
+      modernized.unshift({
+        type: "context-options", origin: "testRunner", version: 6,
+        browserName: "", options: {}, platform: "unknown", wallTime: 0,
+        monotonicTime: 0, sdkLanguage: "javascript", contextId: "",
+      });
+    }
+    modernized = modernized.map((event, index) => {
+      if (event.type === "context-options") {
+        return {
+          ...event,
+          monotonicTime: 0,
+          origin: synthesizedTestContext && index === 0 ? "testRunner" : "library",
+          contextId: "",
+        };
+      }
+      if (event.type !== "before" && event.type !== "action") return event;
+      const apiName = typeof event.apiName === "string" ? event.apiName : "";
+      return { ...event, stepId: event.stepId ?? `${apiName}@${String(event.wallTime ?? "")}` };
+    });
+  }
+  if (version <= 7) {
+    // v7->v8 renamed apiName to the user-facing title and guaranteed stepId.
+    modernized = modernized.map((event) => {
+      if (event.type !== "before" && event.type !== "action") return event;
+      const apiName = typeof event.apiName === "string" ? event.apiName : undefined;
+      const next: Record<string, unknown> = { ...event, stepId: event.stepId ?? event.callId };
+      if (apiName) {
+        next.title = apiName;
+        delete next.apiName;
+      }
+      return next;
+    });
+  }
+  return modernized;
+}
+
+function shiftEvent(event: RecordingEvent, delta: number): RecordingEvent {
+  return {
+    ...event,
+    time: event.time + delta,
+    endTime: event.endTime == null ? undefined : event.endTime + delta,
+  };
+}
+
+function actionStepId(event: RecordingEvent): string | undefined {
+  const stepId = asRecord(event.data).stepId;
+  return typeof stepId === "string" && stepId ? stepId : undefined;
+}
+
+function traceOrigin(event: RecordingEvent): string | undefined {
+  const value = asRecord(event.data).__traceOrigin;
+  return typeof value === "string" ? value : undefined;
+}
+
+function attachFrameSnapshots(events: RecordingEvent[], traceEvents: unknown[]): void {
+  const frames = new Map<string, Omit<BrowserSnapshotDetails, "phase">>();
+  for (const raw of traceEvents) {
+    const event = asRecord(raw);
+    if (event.type !== "frame-snapshot") continue;
+    const snapshot = asRecord(event.snapshot);
+    const name = typeof snapshot.snapshotName === "string" ? snapshot.snapshotName
+      : typeof event.snapshotName === "string" ? event.snapshotName
+      : undefined;
+    if (!name) continue;
+    frames.set(name, {
+      name,
+      contextId: eventContextId(event),
+      pageId: eventPageId(event),
+      viewport: Object.keys(asRecord(snapshot.viewport)).length ? asRecord(snapshot.viewport) : undefined,
+      scrollOffset: snapshot.scrollOffset,
+      snapshot,
+    });
+  }
+
+  for (const event of events) {
+    if (event.kind !== "action") continue;
+    const source = asRecord(event.data);
+    const input = asRecord(source.input);
+    const after = asRecord(source.after);
+    const refs: Array<[BrowserSnapshotDetails["phase"], unknown]> = [
+      ["before", source.beforeSnapshot],
+      ["input", source.inputSnapshot ?? input.inputSnapshot],
+      ["after", source.afterSnapshot ?? after.afterSnapshot],
+    ];
+    const snapshots = refs.flatMap(([phase, reference]) => {
+      const frame = typeof reference === "string" ? frames.get(reference) : undefined;
+      return frame ? [{ ...frame, phase }] : [];
+    });
+    if (!snapshots.length) continue;
+    event.browser = {
+      ...event.browser,
+      // The action's before record may omit identity; frame snapshots are
+      // authoritative for the page that owns the captured DOM state.
+      contextId: event.browser?.contextId ?? snapshots[0].contextId,
+      pageId: event.browser?.pageId ?? snapshots[0].pageId,
+      snapshots,
+    };
+  }
+}
+
+async function parsePlaywrightRecording(
+  files: string[],
+  zipFiles: Record<string, ZipFile>,
+  options: ParseRecordingOptions,
+  inputBytes: number,
+): Promise<PlaywrightRecording> {
+  const limits = resolvedPlaywrightLimits(options.playwrightLimits);
+  assertPlaywrightZipBytes(inputBytes, limits);
+  if (files.length > limits.files) {
+    throw new PlayerError("LIMIT_ERROR", `Playwright recording ZIP exceeds the ${limits.files}-file limit`);
+  }
+  let expanded = 0;
+  for (const name of files) {
+    const file = zipFiles[name];
+    if (file.dir) continue;
+    const size = declaredExpandedSize(file);
+    if (size != null) expanded += size;
+    if (expanded > limits.expandedBytes) {
+      throw new PlayerError("LIMIT_ERROR", `Playwright recording exceeds the ${limits.expandedBytes}-byte expanded limit`);
+    }
+  }
+
+  const traceNames = files.filter((name) => name.endsWith(".trace") && !zipFiles[name].dir).sort();
+  if (!traceNames.length) throw new PlayerError("PARSE_ERROR", "Playwright recording is missing a trace stream");
+  const traceEvents: unknown[] = [];
+  const networkEvents: unknown[] = [];
+  const stacks: unknown[] = [];
+  const schemaVersions: number[] = [];
+  const groupOrigins = new Map<string, string>();
+  const groupContextIds = new Map<string, string>();
+  const warnings: string[] = [];
+  const eventBudget = { remaining: limits.events };
+
+  for (const name of traceNames) {
+    const parsed = parsePlaywrightNDJSON(
+      await readZipText(zipFiles[name], limits.streamBytes, name), name, limits, eventBudget,
+    );
+    const version = playwrightSchemaVersion(parsed, name);
+    schemaVersions.push(version);
+    const modernized = modernizePlaywrightEvents(parsed, version);
+    const rawContext = modernized.map(asRecord).find((event) => event.type === "context-options");
+    // Archive-level `test.trace` carries test-runner semantics even where a
+    // legacy stream has a partial header, and must participate in step joins.
+    const origin = name === "test.trace" || rawContext?.origin === "testRunner" ? "testRunner" : "library";
+    const group = playwrightGroupForTrace(name);
+    groupOrigins.set(group, origin);
+    const contextId = typeof rawContext?.contextId === "string" && rawContext.contextId ? rawContext.contextId : "context";
+    groupContextIds.set(group, contextId);
+    traceEvents.push(...modernized.map((event) => namespacePlaywrightRecord(event, group, origin, contextId)));
+  }
+
+  for (const name of files.filter((file) => file.endsWith(".network") && !zipFiles[file].dir).sort()) {
+    const group = playwrightGroupForSidecar(name) ?? "library";
+    const origin = groupOrigins.get(group) ?? "library";
+    networkEvents.push(...parsePlaywrightNDJSON(
+      await readZipText(zipFiles[name], limits.streamBytes, name), name, limits, eventBudget,
+    )
+      .map((event) => namespacePlaywrightRecord(event, group, origin, groupContextIds.get(group) ?? "context")));
+  }
+  for (const name of files.filter((file) => file.endsWith(".stacks") && !zipFiles[file].dir).sort()) {
+    stacks.push(...parsePlaywrightNDJSON(
+      await readZipText(zipFiles[name], limits.streamBytes, name), name, limits, eventBudget,
+    ));
+  }
+
+  const totalEvents = traceEvents.length + networkEvents.length + stacks.length;
+
+  const allTimelineRaw = [...traceEvents, ...networkEvents].filter((event) => {
+    const record = asRecord(event);
+    return isTimelineEvent(record) && record.type !== "frame-snapshot";
+  });
+  let events = mergeCallLifecycles(allTimelineRaw.map(normalizeEvent));
+  attachFrameSnapshots(events, traceEvents);
+
+  // Match test-runner steps to browser actions. The browser supplies the
+  // playable clock; test-runner records enrich it and are removed when paired.
+  const libraryByStep = new Map<string, RecordingEvent>();
+  for (const event of events) {
+    const stepId = actionStepId(event);
+    if (event.kind === "action" && stepId && traceOrigin(event) !== "testRunner") libraryByStep.set(stepId, event);
+  }
+  const pairedRunnerIds = new Set<string>();
+  let clockDelta = 0;
+  let hasClockDelta = false;
+  for (const event of events) {
+    const stepId = actionStepId(event);
+    const browser = stepId ? libraryByStep.get(stepId) : undefined;
+    if (event.kind !== "action" || traceOrigin(event) !== "testRunner" || !browser) continue;
+    if (!hasClockDelta) {
+      clockDelta = browser.time - event.time;
+      hasClockDelta = true;
+    }
+    // Lifecycle details such as assertion errors live on the `after` record;
+    // expose them at the runner-step level so consumers do not need to replay
+    // the lifecycle just to render an error badge.
+    const runner = { ...event.data, ...asRecord(event.data).after };
+    browser.data = {
+      ...browser.data,
+      parentId: runner.parentId ?? browser.data.parentId,
+      error: runner.error ?? browser.data.error,
+      attachments: runner.attachments ?? browser.data.attachments,
+      annotations: runner.annotations ?? browser.data.annotations,
+      testRunner: runner,
+    };
+    browser.browser = {
+      ...browser.browser,
+      error: runner.error ?? browser.browser?.error,
+    };
+    if (!browser.title && typeof runner.title === "string") browser.title = runner.title;
+    pairedRunnerIds.add(event.id);
+  }
+  if (hasClockDelta) {
+    events = events.map((event) => traceOrigin(event) === "testRunner" ? shiftEvent(event, clockDelta) : event);
+  }
+  events = events.filter((event) => !pairedRunnerIds.has(event.id));
+
+  const screenshotSha1s = new Set(traceEvents.map(asRecord)
+    .filter((event) => event.type === "screencast-frame" && typeof event.sha1 === "string")
+    .map((event) => event.sha1 as string));
+  const resources = new Map<string, { mimeType: string; dataUrl?: string }>();
+  for (const sha1 of screenshotSha1s) {
+    const name = `resources/${sha1}`;
+    const file = zipFiles[name];
+    if (!file || file.dir) {
+      warnings.push(`Missing screenshot resource ${sha1}`);
+      continue;
+    }
+    assertExpandedSize(file, limits.resourceBytes, name);
+    const mimeType = screenshotMime(sha1);
+    const dataUrl = options.includeResourceDataUrls === false ? undefined
+      : `data:${mimeType};base64,${await readZipBase64(file, limits.resourceBytes, name)}`;
+    resources.set(sha1, { mimeType, dataUrl });
+  }
+  let screenshots = extractScreenshotRefs(traceEvents, resources);
+  if (hasClockDelta) {
+    screenshots = screenshots.map((screenshot) => screenshot.id.startsWith("screenshot-") && (() => {
+      const source = asRecord(traceEvents[Number(screenshot.id.slice("screenshot-".length))]);
+      return source.__traceOrigin === "testRunner" ? { ...screenshot, time: screenshot.time + clockDelta } : screenshot;
+    })());
+  }
+
+  const contexts = new Map<string, BrowserTraceContext>();
+  const pages = new Map<string, BrowserTracePage>();
+  for (const raw of traceEvents) {
+    const event = asRecord(raw);
+    const contextId = eventContextId(event);
+    const pageId = eventPageId(event);
+    if (contextId && !contexts.has(contextId)) contexts.set(contextId, { id: contextId });
+    if (event.type === "context-options") {
+      const id = contextId ?? `${String(event.__traceGroup)}:context`;
+      contexts.set(id, { id, options: event.options });
+    }
+    if (pageId) {
+      const params = asRecord(event.params);
+      const existing = pages.get(pageId);
+      pages.set(pageId, {
+        id: pageId,
+        contextId: contextId ?? existing?.contextId,
+        openerId: typeof params.openerId === "string" ? params.openerId : existing?.openerId,
+        url: typeof params.url === "string" ? params.url : existing?.url,
+      });
+    }
+  }
+
+  return {
+    version: 1,
+    format: "playwright",
+    presentation: { kind: "screenshot" },
+    source: options.source,
+    files,
+    metadata: {
+      fileCount: files.length,
+      eventCount: totalEvents,
+      traceEventCount: traceEvents.length,
+      networkEventCount: networkEvents.length,
+      schemaVersions: [...new Set(schemaVersions)].sort((a, b) => a - b),
+      warnings,
+    },
+    timeline: buildTimeline(events, screenshots),
+    contexts: [...contexts.values()].sort((a, b) => a.id.localeCompare(b.id)),
+    pages: [...pages.values()].sort((a, b) => a.id.localeCompare(b.id)),
+    raw: { traceEvents, networkEvents, stacks },
+  };
+}
+
 export async function parseRecording(
   data: ArrayBuffer | Uint8Array | Blob,
   options: ParseRecordingOptions = {},
@@ -1156,6 +1855,14 @@ export async function parseRecording(
   let zip: JSZip;
   try {
     preflight = await preflightZip(data);
+    if (preflight.isPlaywright || hasPlaywrightSourceName(data, options.source)) {
+      // A reserved test.trace marker or exact trace.zip source name is
+      // sufficient to validate caller overrides and enforce the input cap
+      // before JSZip expands the archive or constructs its in-memory file
+      // table. The source-name hint deliberately does not select the adapter:
+      // small ambiguous Vibium archives still use content detection below.
+      assertPlaywrightZipBytes(inputByteLength(data), resolvedPlaywrightLimits(options.playwrightLimits));
+    }
     zip = await JSZip.loadAsync(data);
   } catch (cause) {
     if (cause instanceof PlayerError) throw cause;
@@ -1174,8 +1881,9 @@ export async function parseRecording(
         if (!file.dir) assertExpandedSize(file, TWEE_PARSER_LIMITS.expandedFileBytes, name);
       }
     }
-    return maybeTwee
-      ? await parseTweeRecording(files, zip.files, options)
+    if (maybeTwee) return await parseTweeRecording(files, zip.files, options);
+    return preflight.isPlaywright || await archiveLooksLikePlaywright(files, zip.files)
+      ? await parsePlaywrightRecording(files, zip.files, options, inputByteLength(data))
       : await parseVibiumRecording(files, zip.files, options);
   } catch (cause) {
     if (cause instanceof PlayerError) throw cause;
@@ -1203,7 +1911,15 @@ export async function detectRecordingFormat(
   }
 
   try {
-    return (await preflightZip(data)).isTwee ? "twee" : "vibium";
+    const preflight = await preflightZip(data);
+    if (preflight.isTwee) return "twee";
+    if (preflight.isPlaywright) {
+      assertPlaywrightZipBytes(inputByteLength(data), resolvedPlaywrightLimits(undefined));
+      return "playwright";
+    }
+    const zip = await JSZip.loadAsync(data);
+    const files = Object.keys(zip.files).sort();
+    return await archiveLooksLikePlaywright(files, zip.files) ? "playwright" : "vibium";
   } catch (cause) {
     if (cause instanceof PlayerError) throw cause;
     throw new PlayerError("ZIP_ERROR", "Unable to inspect recording ZIP", { cause });
@@ -1213,22 +1929,24 @@ export async function detectRecordingFormat(
 function downloadLimit(options: LoadRecordingOptions, url: string): number | undefined {
   const configured = options.maxDownloadBytes !== undefined;
   const limit = options.maxDownloadBytes;
-  if (configured && (!Number.isSafeInteger(limit) || limit == null || limit <= 0 || limit > TWEE_PARSER_LIMITS.zipBytes)) {
+  const maximumDownloadBytes = Math.max(TWEE_PARSER_LIMITS.zipBytes, PLAYWRIGHT_PARSER_LIMITS.zipBytes);
+  if (configured && (!Number.isSafeInteger(limit) || limit == null || limit <= 0 || limit > maximumDownloadBytes)) {
     throw new PlayerError(
       "INVALID_INPUT",
-      `maxDownloadBytes must be a positive integer no greater than ${TWEE_PARSER_LIMITS.zipBytes}`,
+      `maxDownloadBytes must be a positive integer no greater than ${maximumDownloadBytes}`,
     );
   }
 
   if (configured) return limit;
 
-  // A .twee URL is known before its response is consumed, so enforce the
-  // archive cap while streaming. Generic .zip URLs remain content-detected:
-  // imposing the Twee cap on them would regress existing large Vibium files.
-  // parseRecording still preflights a detected Twee archive before JSZip
-  // expands it, regardless of the URL suffix.
+  // Known archive names are capped while streaming. Generic .zip URLs remain
+  // content-detected so existing large Vibium recordings stay unbounded.
+  // parseRecording still preflights a detected archive before JSZip expands
+  // it, regardless of the URL suffix.
   try {
     const pathname = new URL(url, "https://record-player.invalid").pathname;
+    const basename = pathname.slice(pathname.lastIndexOf("/") + 1).toLowerCase();
+    if (basename === "trace.zip") return PLAYWRIGHT_PARSER_LIMITS.zipBytes;
     return pathname.toLowerCase().endsWith(".twee") ? TWEE_PARSER_LIMITS.zipBytes : undefined;
   } catch {
     return undefined;
@@ -1340,7 +2058,7 @@ export async function loadRecording(source: URL | string, options: LoadRecording
   }
 
   // Preserve a cap selected from the requested URL, and also recognize a
-  // redirect whose final URL exposes the .twee suffix.
+  // redirect whose final URL exposes a known capped archive name.
   const effectiveLimit = limit ?? downloadLimit({}, response.url);
   const data = await readResponse(response, effectiveLimit, url);
   return parseRecording(data, { ...options, source: url });

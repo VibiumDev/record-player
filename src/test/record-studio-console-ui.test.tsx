@@ -4,6 +4,20 @@ import JSZip from "jszip";
 import CompareStudio from "../components/CompareStudio";
 import RecordStudio from "../components/RecordStudio";
 
+async function vibiumFile(events: unknown[]): Promise<Uint8Array> {
+  const zip = new JSZip();
+  zip.file("trace.trace", events.map((event) => JSON.stringify(event)).join("\n"));
+  return zip.generateAsync({ type: "uint8array" });
+}
+
+async function playwrightFile(events: unknown[]): Promise<Uint8Array> {
+  const zip = new JSZip();
+  zip.file("trace.trace", events.map((event) => JSON.stringify(event)).join("\n"));
+  zip.file("resources/a.jpeg", new Uint8Array([1]));
+  zip.file("resources/b.jpeg", new Uint8Array([2]));
+  return zip.generateAsync({ type: "uint8array" });
+}
+
 describe("RecordStudio console UI", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/?i=v&t=h&c=h");
@@ -46,18 +60,7 @@ describe("RecordStudio console UI", () => {
       },
     });
 
-    vi.stubGlobal("JSZip", {
-      loadAsync: vi.fn(async () => ({
-        files: {
-          "trace.trace": {
-            dir: false,
-            async: vi.fn(async () => traceLine),
-          },
-        },
-      })),
-    });
-
-    render(<RecordStudio initialFile={new Blob(["zip"])} hideGlobalChrome />);
+    render(<RecordStudio initialFile={await vibiumFile([JSON.parse(traceLine)])} hideGlobalChrome />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Log (1)" }));
     fireEvent.click(screen.getByText("error"));
@@ -66,6 +69,39 @@ describe("RecordStudio console UI", () => {
       expect(screen.getByText(/Stack:/)).toBeInTheDocument();
       expect(screen.getByText(/at renderApp \(http:\/\/localhost:5173\/src\/App.js:12:5\)/)).toBeInTheDocument();
     });
+  });
+
+  it("keeps an interleaved Playwright studio view on one page", async () => {
+    window.history.pushState({}, "", "/?at=6&i=v&t=v&c=h");
+    const recording = await playwrightFile([
+      { type: "context-options", version: 8, origin: "library", contextId: "ctx-a", options: { viewport: { width: 320, height: 200 }, deviceScaleFactor: 1 } },
+      { type: "before", callId: "a", title: "page.click", startTime: 0, contextId: "ctx-a", pageId: "page-a" },
+      { type: "after", callId: "a", endTime: 1, contextId: "ctx-a", pageId: "page-a" },
+      { type: "screencast-frame", timestamp: 0, sha1: "a.jpeg", contextId: "ctx-a", pageId: "page-a", width: 320, height: 200 },
+      { type: "console", time: 6, contextId: "ctx-b", pageId: "page-b", messageType: "error", text: "page b error" },
+      { type: "before", callId: "b", title: "page.click", startTime: 10, contextId: "ctx-b", pageId: "page-b" },
+      { type: "input", callId: "b", point: { x: 20, y: 20 }, contextId: "ctx-b", pageId: "page-b" },
+      { type: "after", callId: "b", endTime: 12, contextId: "ctx-b", pageId: "page-b" },
+      { type: "screencast-frame", timestamp: 20, sha1: "b.jpeg", contextId: "ctx-b", pageId: "page-b", width: 320, height: 200 },
+    ]);
+    const { container } = render(<RecordStudio initialFile={recording} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Log (1)" }));
+    expect(screen.getByText("page b error · library:page-b")).toBeInTheDocument();
+    expect(screen.getByLabelText("Recording page")).toHaveValue("library:page-b");
+    expect(screen.queryByAltText("trace screenshot")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('img[src="data:image/jpeg;base64,Ag=="]')).toHaveLength(1);
+
+    fireEvent.change(screen.getByLabelText("Recording page"), { target: { value: "library:page-a" } });
+    expect(screen.getByAltText("trace screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,AQ==");
+    expect(container.querySelectorAll('img[src="data:image/jpeg;base64,Ag=="]')).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText("Recording page"), { target: { value: "library:page-b" } });
+    expect(screen.queryByAltText("trace screenshot")).not.toBeInTheDocument();
+    const bFilmstrip = container.querySelector('img[src="data:image/jpeg;base64,Ag=="]');
+    expect(bFilmstrip).not.toBeNull();
+    fireEvent.click(bFilmstrip!.parentElement!);
+    expect(screen.getByAltText("trace screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,Ag==");
   });
 
   it("shows a toggle for skip-idle playback", async () => {
@@ -95,18 +131,7 @@ describe("RecordStudio console UI", () => {
       .map((event) => JSON.stringify(event))
       .join("\n");
 
-    vi.stubGlobal("JSZip", {
-      loadAsync: vi.fn(async () => ({
-        files: {
-          "trace.trace": {
-            dir: false,
-            async: vi.fn(async () => traceLines),
-          },
-        },
-      })),
-    });
-
-    render(<RecordStudio initialFile={new Blob(["zip"])} hideGlobalChrome />);
+    render(<RecordStudio initialFile={await vibiumFile(traceLines.split("\n").map(JSON.parse))} hideGlobalChrome />);
 
     const skipIdle = await screen.findByRole("button", { name: "Skip idle" });
     expect(skipIdle).toHaveAttribute("aria-pressed", "false");
@@ -145,18 +170,7 @@ describe("RecordStudio console UI", () => {
       .map((event) => JSON.stringify(event))
       .join("\n");
 
-    vi.stubGlobal("JSZip", {
-      loadAsync: vi.fn(async () => ({
-        files: {
-          "trace.trace": {
-            dir: false,
-            async: vi.fn(async () => traceLines),
-          },
-        },
-      })),
-    });
-
-    render(<RecordStudio initialFile={new Blob(["zip"])} hideGlobalChrome />);
+    render(<RecordStudio initialFile={await vibiumFile(traceLines.split("\n").map(JSON.parse))} hideGlobalChrome />);
 
     const skipIdle = await screen.findByRole("button", { name: "Skip idle" });
     expect(skipIdle).toHaveAttribute("aria-pressed", "false");
@@ -192,23 +206,13 @@ describe("RecordStudio console UI", () => {
       .map((event) => JSON.stringify(event))
       .join("\n");
 
-    vi.stubGlobal("JSZip", {
-      loadAsync: vi.fn(async () => ({
-        files: {
-          "trace.trace": {
-            dir: false,
-            async: vi.fn(async () => traceLines),
-          },
-        },
-      })),
-    });
-
     const { container } = render(<CompareStudio />);
     const inputs = Array.from(container.querySelectorAll("input[type='file']"));
     expect(inputs).toHaveLength(2);
 
-    fireEvent.change(inputs[0], { target: { files: [new File(["zip"], "before.zip", { type: "application/zip" })] } });
-    fireEvent.change(inputs[1], { target: { files: [new File(["zip"], "after.zip", { type: "application/zip" })] } });
+    const fixture = await vibiumFile(traceLines.split("\n").map(JSON.parse));
+    fireEvent.change(inputs[0], { target: { files: [fixture] } });
+    fireEvent.change(inputs[1], { target: { files: [fixture] } });
 
     const skipIdle = await screen.findByRole("button", { name: "Skip idle" });
     expect(skipIdle).toHaveAttribute("aria-pressed", "false");

@@ -1,141 +1,28 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
-import JSZip from "jszip";
-import { detectRecordingFormat, parseRecording } from "../packages/player-core";
+import { parseRecording } from "../packages/player-core";
 import { RecordPlayer } from "../packages/player-react";
 
-/*
-  Vibium Player — player.vibium.dev
-  
-  Drop a Vibium record.zip onto this viewer.
-  It uses JSZip to unzip, then parses the NDJSON event
-  files and extracts screenshots from resources.
-*/
+/* Browser recording studio — archive decoding is provided by player-core. */
 
-// Prefer an explicitly injected global (tests and embedding pages can set
-// window.JSZip), otherwise use the bundled dependency so the player has no
-// runtime CDN requirement.
-let JSZipLoaded = null;
-function loadJSZip() {
-  if (JSZipLoaded) return JSZipLoaded;
-  const injected = typeof window !== "undefined" ? window.JSZip : undefined;
-  JSZipLoaded = Promise.resolve(injected || JSZip);
-  return JSZipLoaded;
-}
-
-// ─── Parse trace NDJSON ─────────────────────────────────────────────────────
-function parseNDJSON(text) {
-  return text
-    .split("\n")
-    .filter((l) => l.trim())
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
-}
-
-function consoleValuePreview(value) {
-  if (value == null) return String(value);
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function consoleArgPreview(arg) {
-  if (arg == null) return String(arg);
-  if (Object.prototype.hasOwnProperty.call(arg, "value")) return consoleValuePreview(arg.value);
-  if (arg.unserializableValue != null) return String(arg.unserializableValue);
-  if (arg.description) return String(arg.description);
-  if (arg.text) return String(arg.text);
-  if (arg.type) return `[${arg.type}]`;
-  return consoleValuePreview(arg);
-}
-
-function formatConsoleStackTrace(stackTrace) {
-  const frames = stackTrace?.callFrames || stackTrace?.frames || [];
-  if (!Array.isArray(frames) || frames.length === 0) return "";
-
-  return frames
-    .map((frame) => {
-      const fn = frame.functionName || frame.function || "<anonymous>";
-      const url = frame.url || frame.uri || frame.fileName || "";
-      const line = frame.lineNumber ?? frame.line ?? "";
-      const column = frame.columnNumber ?? frame.column ?? "";
-      const location = [url, line, column].filter((part) => part !== "").join(":");
-      return `at ${fn}${location ? ` (${location})` : ""}`;
-    })
-    .join("\n");
+function formatConsoleStackTrace(stack) {
+  const frames = stack?.callFrames || stack?.frames || [];
+  return Array.isArray(frames) ? frames.map((frame) => {
+    const name = frame.functionName || frame.function || "<anonymous>";
+    const location = [frame.url || frame.uri || frame.fileName, frame.lineNumber ?? frame.line, frame.columnNumber ?? frame.column]
+      .filter((value) => value !== undefined && value !== "").join(":");
+    return `at ${name}${location ? ` (${location})` : ""}`;
+  }).join("\n") : "";
 }
 
 function formatConsoleLocation(location) {
   if (!location || typeof location !== "object") return "";
-  const url = location.url || location.uri || location.fileName || "";
-  const line = location.lineNumber ?? location.line ?? "";
-  const column = location.columnNumber ?? location.column ?? "";
-  return [url, line, column].filter((part) => part !== "").join(":");
+  return [location.url || location.uri || location.fileName, location.lineNumber ?? location.line, location.columnNumber ?? location.column]
+    .filter((value) => value !== undefined && value !== "").join(":");
 }
 
-function getConsoleEventText(params = {}) {
-  const args = Array.isArray(params.args) ? params.args : [];
-  const argText = args.map(consoleArgPreview).join(" ");
-  return params.text || params.message || argText || "";
-}
-
-function getConsoleEventDetails(params = {}) {
-  const args = Array.isArray(params.args) ? params.args : [];
-  const sections = [];
-  const typeLine = [params.source && `Source: ${params.source}`, params.type && `Type: ${params.type}`]
-    .filter(Boolean)
-    .join("\n");
-  if (typeLine) sections.push(typeLine);
-
-  const text = getConsoleEventText(params);
-  if (text) sections.push(`Message:\n${text}`);
-
-  if (args.length) {
-    sections.push(`Arguments:\n${args.map((arg, index) => `[${index}] ${consoleArgPreview(arg)}`).join("\n")}`);
-  }
-
-  const stack = formatConsoleStackTrace(params.stackTrace);
-  if (stack) sections.push(`Stack:\n${stack}`);
-
-  if (params.exceptionDetails) {
-    sections.push(`Exception:\n${consoleValuePreview(params.exceptionDetails)}`);
-  }
-
-  const location = formatConsoleLocation(params.location);
-  if (location) sections.push(`Location:\n${location}`);
-
-  if (sections.length) return sections.join("\n\n");
-  return consoleValuePreview(params);
-}
-
-function harMonotonicTimeToMs(value) {
-  const time = Number(value);
-  if (!Number.isFinite(time)) return 0;
-
-  // Playwright/current Vibium recordings store _monotonicTime in relative
-  // milliseconds (always << 1e9, same clock/scale as action startTime/endTime),
-  // so it's returned raw. Some legacy Vibium recordings stored it as an absolute
-  // epoch in SECONDS (~1.7e9); rescale only that band to epoch-ms so network
-  // entries align with action times (epoch-ms, >= 1e12) instead of producing a
-  // multi-decade timeline. No valid Playwright trace lands in [1e9, 1e12). (#105)
-  return time >= 1e9 && time < 1e12 ? time * 1000 : time;
-}
-
-function harSnapshotStartTimeToMs(snapshot) {
-  const monotonicTime = harMonotonicTimeToMs(snapshot?._monotonicTime);
-  if (monotonicTime) return monotonicTime;
-
-  const startedDateTime = Date.parse(snapshot?.startedDateTime || "");
-  return Number.isFinite(startedDateTime) ? startedDateTime : 0;
+function uniqueBoosts(values) {
+  return [...new Set(values.map((value) => Math.round(Number(value) * 1000) / 1000)
+    .filter((value) => Number.isFinite(value) && value >= 1 && value <= 4))];
 }
 
 function finiteTimelineTimes(times) {
@@ -222,391 +109,6 @@ function advancePlayheadWithSkip(from, to, skipSegments = []) {
   return current + remaining;
 }
 
-function traceEventTime(evt) {
-  const time = Number(evt?.timestamp ?? evt?.time ?? evt?.startTime ?? evt?.endTime ?? evt?.params?.timestamp);
-  return Number.isFinite(time) ? time : NaN;
-}
-
-function uniqueBoosts(values) {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => Math.round(Number(value) * 1000) / 1000)
-        .filter((value) => Number.isFinite(value) && value >= 1 && value <= 4),
-    ),
-  );
-}
-
-function inferActionCoordinateBoosts(actions, fallbackViewport) {
-  const groups = new Map();
-
-  for (const action of actions) {
-    const viewport = action._snapshotMeta?.viewport || fallbackViewport;
-    if (!viewport?.width || !viewport?.height) continue;
-
-    const right = Math.max(action.point?.x || 0, action.box ? action.box.x + action.box.width : 0);
-    const bottom = Math.max(action.point?.y || 0, action.box ? action.box.y + action.box.height : 0);
-    if (!right || !bottom) continue;
-
-    const key = `${viewport.width}x${viewport.height}`;
-    const group = groups.get(key) || { viewport, maxRight: 0, maxBottom: 0 };
-    group.maxRight = Math.max(group.maxRight, right);
-    group.maxBottom = Math.max(group.maxBottom, bottom);
-    groups.set(key, group);
-  }
-
-  const boostsByViewport = new Map();
-  for (const [key, group] of groups) {
-    const ratioX = group.viewport.width / group.maxRight;
-    const ratioY = group.viewport.height / group.maxBottom;
-    const nearestX = Math.round(ratioX);
-    const nearestY = Math.round(ratioY);
-    const fitX = (group.maxRight * nearestX) / group.viewport.width;
-    const fitY = (group.maxBottom * nearestY) / group.viewport.height;
-
-    if (
-      nearestX === nearestY &&
-      nearestX > 1 &&
-      nearestX <= 4 &&
-      Math.abs(ratioX - nearestX) <= 0.35 &&
-      Math.abs(ratioY - nearestY) <= 0.45 &&
-      fitX >= 0.82 &&
-      fitX <= 1.08 &&
-      fitY >= 0.7 &&
-      fitY <= 1.15
-    ) {
-      boostsByViewport.set(key, [nearestX]);
-    }
-  }
-
-  for (const action of actions) {
-    const viewport = action._snapshotMeta?.viewport || fallbackViewport;
-    const boosts = viewport ? boostsByViewport.get(`${viewport.width}x${viewport.height}`) : null;
-    if (boosts?.length) action._coordinateBoosts = boosts;
-  }
-}
-
-// ─── Extract data from parsed trace events ──────────────────────────────────
-function processTraceEvents(events) {
-  const actions = [];
-  const consoleEvents = [];
-  let contextOptions = null;
-  const screenshotRefs = [];
-  const actionMap = new Map();
-  const groups = [];
-  const groupCallIds = new Set();
-  const domSnapshots = [];
-  const traceEvents = [];
-  // Map snapshot name/id → metadata (viewport, scroll offsets)
-  const snapshotMetaMap = new Map();
-  const snapshotMetaList = [];
-
-  const normalizeViewport = (v) => {
-    if (!v) return null;
-    if (Array.isArray(v) && v.length >= 2) {
-      const width = Number(v[0]);
-      const height = Number(v[1]);
-      return Number.isFinite(width) && Number.isFinite(height) ? { width, height } : null;
-    }
-    const width = Number(v.width ?? v.w);
-    const height = Number(v.height ?? v.h);
-    return Number.isFinite(width) && Number.isFinite(height) ? { width, height } : null;
-  };
-
-  const setSnapshotAlias = (key, meta) => {
-    if (key == null) return;
-    const k = String(key);
-    if (!k) return;
-    snapshotMetaMap.set(k, meta);
-  };
-
-  for (const evt of events) {
-    const type = evt.type;
-
-    if (type === "context-options") {
-      contextOptions = evt;
-      continue;
-    }
-
-    // Parse frame-snapshot for viewport & scroll metadata
-    if (type === "frame-snapshot") {
-      const nestedSnapshot = evt.snapshot && typeof evt.snapshot === "object" ? evt.snapshot : null;
-      const snapshotTime = traceEventTime(evt);
-      const meta = {
-        viewport:
-          normalizeViewport(evt.viewport) ||
-          normalizeViewport(evt.viewportSize) ||
-          normalizeViewport(nestedSnapshot?.viewport) ||
-          normalizeViewport(nestedSnapshot?.viewportSize) ||
-          null,
-        scrollX:
-          Number(
-            evt.scrollX ??
-              evt.scrollLeft ??
-              evt.scrollOffset?.x ??
-              nestedSnapshot?.scrollX ??
-              nestedSnapshot?.scrollLeft ??
-              0,
-          ) || 0,
-        scrollY:
-          Number(
-            evt.scrollY ??
-              evt.scrollTop ??
-              evt.scrollOffset?.y ??
-              nestedSnapshot?.scrollY ??
-              nestedSnapshot?.scrollTop ??
-              0,
-          ) || 0,
-        pageId: evt.pageId || evt.frameId || nestedSnapshot?.pageId || nestedSnapshot?.frameId || null,
-        time: Number.isFinite(snapshotTime) ? snapshotTime : 0,
-      };
-
-      // Register all likely snapshot id aliases
-      const aliases = [
-        typeof evt.snapshot === "string" ? evt.snapshot : null,
-        evt.snapshotName,
-        evt.snapshotId,
-        evt.name,
-        evt.title,
-        evt.callId,
-        nestedSnapshot?.snapshotName,
-        nestedSnapshot?.name,
-        nestedSnapshot?.id,
-      ];
-      for (const a of aliases) setSnapshotAlias(a, meta);
-
-      snapshotMetaList.push(meta);
-      if (Number.isFinite(snapshotTime)) {
-        domSnapshots.push({
-          time: snapshotTime,
-          pageId: meta.pageId,
-          name: evt.snapshotName || evt.snapshotId || evt.name || nestedSnapshot?.name || nestedSnapshot?.id || "",
-        });
-      }
-      continue;
-    }
-
-    const apiName = evt.title || (evt.class && evt.method ? `${evt.class}.${evt.method}` : "");
-
-    // Groups: class=Tracing, method=group — before/after pairs
-    if (type === "before" && evt.class === "Tracing" && (evt.method === "group" || evt.method === "tracingGroup")) {
-      actionMap.set(evt.callId, {
-        _isGroup: true,
-        title: evt.title || evt.params?.name || "Group",
-        startTime: evt.wallTime || evt.startTime,
-      });
-      groupCallIds.add(evt.callId);
-      continue;
-    }
-
-    if (type === "after" && groupCallIds.has(evt.callId)) {
-      const g = actionMap.get(evt.callId);
-      if (g) {
-        g.endTime = evt.endTime || g.startTime;
-        groups.push({ title: g.title, startTime: g.startTime, endTime: g.endTime });
-        actionMap.delete(evt.callId);
-      }
-      continue;
-    }
-
-    // Actions: before/after pairs
-    if (type === "before") {
-      actionMap.set(evt.callId, {
-        callId: evt.callId,
-        apiName,
-        params: evt.params || {},
-        startTime: evt.startTime,
-        beforeSnapshot: evt.beforeSnapshot,
-        pageId: evt.pageId,
-      });
-      continue;
-    }
-
-    if (type === "input") {
-      const existing = actionMap.get(evt.callId);
-      if (existing) {
-        if (evt.point) existing.point = evt.point;
-        if (evt.box) existing.box = evt.box;
-      }
-      continue;
-    }
-
-    if (type === "after") {
-      const existing = actionMap.get(evt.callId);
-      if (existing) {
-        existing.endTime = evt.endTime || evt.startTime;
-        existing.afterSnapshot = evt.afterSnapshot;
-        existing.error = evt.error;
-        existing.result = evt.result;
-        actions.push(existing);
-        actionMap.delete(evt.callId);
-      }
-      continue;
-    }
-
-    // Console: event with method=log.entryAdded
-    if (type === "event" && evt.method === "log.entryAdded") {
-      const params = evt.params || {};
-      consoleEvents.push({
-        time: evt.time || params.timestamp,
-        type: params.level || "log",
-        text: getConsoleEventText(params),
-        details: getConsoleEventDetails(params),
-        args: params.args || [],
-        stackTrace: params.stackTrace || null,
-      });
-      continue;
-    }
-
-    if (type === "event") {
-      const time = traceEventTime(evt);
-      if (Number.isFinite(time)) {
-        traceEvents.push({
-          time,
-          method: evt.method || "",
-        });
-      }
-      continue;
-    }
-
-    // Screencast frames
-    if (type === "screencast-frame") {
-      screenshotRefs.push({
-        time: evt.timestamp,
-        sha1: evt.sha1,
-        width: evt.width,
-        height: evt.height,
-      });
-    }
-  }
-
-  // Collect orphaned before events (no matching after)
-  for (const [, data] of actionMap) {
-    if (data._isGroup) {
-      groups.push({ title: data.title, startTime: data.startTime, endTime: data.startTime });
-    } else {
-      actions.push(data);
-    }
-  }
-
-  // Attach snapshot metadata to actions
-  for (const action of actions) {
-    const snapCandidates = [action.beforeSnapshot, action.afterSnapshot].filter(Boolean).map(String);
-
-    let meta = null;
-    for (const snapName of snapCandidates) {
-      if (snapshotMetaMap.has(snapName)) {
-        meta = snapshotMetaMap.get(snapName);
-        break;
-      }
-    }
-
-    // Fallback: nearest frame-snapshot in time (prefer same page when available)
-    if (!meta && snapshotMetaList.length) {
-      const targetTime = Number(action.startTime ?? action.endTime ?? 0) || 0;
-      let best = null;
-      let bestDist = Infinity;
-      for (const cand of snapshotMetaList) {
-        if (action.pageId && cand.pageId && action.pageId !== cand.pageId) continue;
-        const dist = Math.abs((cand.time || 0) - targetTime);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = cand;
-        }
-      }
-      meta = best;
-    }
-
-    if (meta) action._snapshotMeta = meta;
-  }
-
-  actions.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
-  consoleEvents.sort((a, b) => (a.time || 0) - (b.time || 0));
-  domSnapshots.sort((a, b) => (a.time || 0) - (b.time || 0));
-  traceEvents.sort((a, b) => (a.time || 0) - (b.time || 0));
-  screenshotRefs.sort((a, b) => (a.time || 0) - (b.time || 0));
-
-  // Derive fallback viewport from first screencast-frame dimensions
-  let fallbackViewport = null;
-  if (screenshotRefs.length > 0) {
-    const first = screenshotRefs[0];
-    if (first.width && first.height) {
-      fallbackViewport = { width: first.width, height: first.height };
-    }
-  }
-
-  inferActionCoordinateBoosts(actions, fallbackViewport);
-
-  return { actions, consoleEvents, contextOptions, screenshotRefs, groups, domSnapshots, traceEvents, snapshotMetaMap, fallbackViewport };
-}
-
-// ─── Parse network events (BiDi format) ─────────────────────────────────────
-function processNetworkEvents(events) {
-  const pending = new Map(); // requestId -> partial data
-  const results = [];
-
-  for (const evt of events) {
-    // HAR-style format (Vibium traces): { snapshot: { request, response, _monotonicTime, ... } }
-    if (evt.snapshot) {
-      const snap = evt.snapshot;
-      const req = snap.request || {};
-      const resp = snap.response || {};
-      const startTime = harSnapshotStartTimeToMs(snap);
-      results.push({
-        url: req.url || "",
-        method: req.method || "GET",
-        startTime,
-        endTime: startTime + (Number(snap.time) || 0),
-        status: resp.status || 0,
-        statusText: resp.statusText || "",
-        mimeType: resp.content?.mimeType || "",
-        size: resp.content?.size || 0,
-      });
-      continue;
-    }
-
-    // BiDi format: { method: "network.beforeRequestSent" / "network.responseCompleted", params: { ... } }
-    const method = evt.method;
-    const params = evt.params || {};
-    const req = params.request || {};
-    const requestId = req.request;
-
-    if (method === "network.beforeRequestSent") {
-      pending.set(requestId, {
-        url: req.url || "",
-        method: req.method || "GET",
-        startTime: params.timestamp || evt.timestamp || 0,
-        resourceType: req["goog:resourceType"] || req.destination || "",
-      });
-    }
-
-    if (method === "network.responseCompleted") {
-      const resp = params.response || {};
-      const entry = pending.get(requestId) || {
-        url: req.url || "",
-        method: req.method || "GET",
-        startTime: params.timestamp || evt.timestamp || 0,
-      };
-      entry.endTime = params.timestamp || evt.timestamp || 0;
-      entry.status = resp.status || 0;
-      entry.statusText = resp.statusText || "";
-      entry.mimeType = resp.mimeType || "";
-      results.push(entry);
-      pending.delete(requestId);
-    }
-  }
-
-  // Include pending requests that never completed
-  for (const [, entry] of pending) {
-    entry.endTime = entry.startTime;
-    entry.status = 0;
-    results.push(entry);
-  }
-
-  results.sort((a, b) => a.startTime - b.startTime);
-  return results;
-}
-
 // ─── Format time helper ─────────────────────────────────────────────────────
 function fmt(ms) {
    if (ms == null || isNaN(ms) || ms < 0) return "0:00.00";
@@ -624,6 +126,114 @@ function shortUrl(url) {
   } catch {
     return url?.slice(0, 60) || "";
   }
+}
+
+// The studio intentionally consumes the portable player-core contract.  Keep
+// this adapter shallow: it only names fields the existing inspector expects;
+// archive parsing, lifecycle folding, clock normalization, HAR conversion and
+// resource decoding all belong to player-core.
+function browserRecordingView(recording) {
+  const browserEvents = recording.timeline.events;
+  const contextOptions = recording.format === "vibium" ? recording.metadata.contextOptions : undefined;
+  const actionView = browserEvents.filter((event) => event.kind === "action").map((event) => {
+    const snapshots = event.browser?.snapshots || [];
+    const snapshot = snapshots.find((item) => item.phase === "after") || snapshots[0];
+    const scrollOffset = snapshot?.scrollOffset;
+    return {
+      id: event.id,
+      apiName: event.browser?.apiName || event.title || event.method || "action",
+      params: event.browser?.params || {},
+      point: event.browser?.point,
+      box: event.browser?.box,
+      error: event.browser?.error,
+      startTime: event.time,
+      endTime: event.endTime ?? event.time,
+      duration: event.duration ?? Math.max(0, (event.endTime ?? event.time) - event.time),
+      pageId: event.browser?.pageId,
+      contextId: event.browser?.contextId,
+      _snapshotMeta: snapshot && {
+        viewport: snapshot.viewport,
+        scrollX: Number(scrollOffset?.x ?? scrollOffset?.left ?? 0) || 0,
+        scrollY: Number(scrollOffset?.y ?? scrollOffset?.top ?? 0) || 0,
+        pageId: snapshot.pageId,
+      },
+    };
+  });
+  const consoleEvents = browserEvents.filter((event) => event.kind === "console").map((event) => {
+    // `params` is a normalized portable field retained for older Vibium log
+    // records; modern Playwright console records expose the dedicated fields.
+    const params = event.browser?.params || {};
+    const type = event.browser?.messageType || params.level || event.type || "log";
+    const text = event.browser?.text || params.text || params.message || "";
+    const stack = formatConsoleStackTrace(event.browser?.stack || params.stackTrace);
+    const location = formatConsoleLocation(event.browser?.location || params.location);
+    const details = typeof event.browser?.details === "string" ? event.browser.details : [
+      text && `Message:\n${text}`,
+      stack && `Stack:\n${stack}`,
+      location && `Location:\n${location}`,
+    ].filter(Boolean).join("\n\n");
+    return {
+      id: event.id,
+      time: event.time,
+      type: String(type),
+      text,
+      details,
+      args: event.browser?.args || [],
+      stackTrace: event.browser?.stack || null,
+      pageId: event.browser?.pageId,
+    };
+  });
+  const network = browserEvents.filter((event) => event.kind === "network").map((event) => ({
+    id: event.id,
+    url: event.browser?.url || event.title || "",
+    method: event.browser?.requestMethod || event.method || "GET",
+    startTime: event.time,
+    endTime: event.endTime ?? event.time,
+    duration: event.duration ?? Math.max(0, (event.endTime ?? event.time) - event.time),
+    status: event.browser?.status || 0,
+    statusText: event.browser?.statusText || "",
+    mimeType: event.browser?.mimeType || "",
+    size: event.browser?.size || 0,
+    pageId: event.browser?.pageId,
+  }));
+  const groups = browserEvents.filter((event) => event.kind === "group").map((event) => ({
+    id: event.id,
+    title: event.title || "Group",
+    startTime: event.time,
+    endTime: event.endTime ?? event.time,
+    pageId: event.browser?.pageId,
+  }));
+  const screenshots = recording.timeline.screenshots.map((screenshot) => ({
+    ...screenshot,
+    url: screenshot.dataUrl || null,
+  }));
+  const domSnapshots = actionView.flatMap((action) => (action._snapshotMeta ? [{
+    time: action.startTime,
+    pageId: action._snapshotMeta.pageId || action.pageId,
+    name: "action snapshot",
+  }] : []));
+  const view = {
+    format: recording.format,
+    pages: recording.format === "playwright" ? recording.pages : [],
+    contexts: recording.format === "playwright" ? recording.contexts : [],
+    actions: actionView,
+    console: consoleEvents,
+    network,
+    groups,
+    domSnapshots,
+    traceEvents: browserEvents.filter((event) => event.kind === "raw").map((event) => ({ time: event.time, method: event.method || "" })),
+    screenshots,
+    contextOptions,
+    fallbackViewport: screenshots.find((screenshot) => screenshot.width && screenshot.height) && {
+      width: screenshots.find((screenshot) => screenshot.width && screenshot.height).width,
+      height: screenshots.find((screenshot) => screenshot.width && screenshot.height).height,
+    },
+    duration: recording.timeline.duration,
+    fileCount: recording.metadata.fileCount,
+    eventCount: recording.metadata.eventCount,
+  };
+  view.skipIdleSegments = buildSkipIdleSegments(view);
+  return view;
 }
 
 // ─── Vibium brand palette ────────────────────────────────────────────────────
@@ -1241,6 +851,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const [loop, setLoop] = useState(false);
   const [skipIdle, setSkipIdle] = useState(getPanelDefault("skip-idle", false));
   const [selectedAction, setSelectedAction] = useState(null);
+  const [selectedPageId, setSelectedPageId] = useState(null);
   const [selectedConsoleEvent, setSelectedConsoleEvent] = useState(null);
   const [actionFilter, setActionFilter] = useState("human");
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
@@ -1454,178 +1065,36 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     };
   }, [traceData]);
 
-  // ─── Load trace.zip ─────────────────────────────────────────────────────
-  const loadTrace = useCallback(async (file) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const JSZip = await loadJSZip();
-      const zip = await JSZip.loadAsync(file);
-      const files = Object.keys(zip.files);
-      setFileList(files);
-
-      // Parse *.trace files (NDJSON)
-      let allEvents = [];
-      for (const fname of files) {
-        if (fname.endsWith(".trace") && !zip.files[fname].dir) {
-          try {
-            const text = await zip.files[fname].async("string");
-            if (text.trim()) allEvents.push(...parseNDJSON(text));
-          } catch {}
-        }
-      }
-
-      // Parse *.network files (NDJSON, may be empty)
-      let networkEvents = [];
-      for (const fname of files) {
-        if (fname.endsWith(".network") && !zip.files[fname].dir) {
-          try {
-            const text = await zip.files[fname].async("string");
-            if (text.trim()) networkEvents.push(...parseNDJSON(text));
-          } catch {}
-        }
-      }
-
-      // Load resources/ as data URIs
-      const screenshots = new Map();
-      for (const fname of files) {
-        if (fname.startsWith("resources/") && !zip.files[fname].dir) {
-          try {
-            const base64 = await zip.files[fname].async("base64");
-            const sha1 = fname.split("/").pop();
-            const mime = sha1.endsWith(".png") ? "image/png" : "image/jpeg";
-            screenshots.set(sha1, `data:${mime};base64,${base64}`);
-          } catch {}
-        }
-      }
-
-      const { actions, consoleEvents, contextOptions, screenshotRefs, groups, domSnapshots, traceEvents } = processTraceEvents(allEvents);
-      const network = processNetworkEvents(networkEvents);
-
-      // Resolve screenshot refs to data URIs
-      const resolvedScreenshots = screenshotRefs
-        .map((ref) => ({ ...ref, url: screenshots.get(ref.sha1) || null }))
-        .filter((s) => s.url);
-
-      // Calculate timeline bounds
-      const allTimes = [
-        ...actions.flatMap((a) => [a.startTime, a.endTime]),
-        ...network.flatMap((n) => [n.startTime, n.endTime]),
-        ...consoleEvents.map((c) => c.time),
-        ...domSnapshots.map((s) => s.time),
-        ...traceEvents.map((e) => e.time),
-        ...screenshotRefs.map((s) => s.time),
-        ...groups.flatMap((g) => [g.startTime, g.endTime]),
-      ];
-      const finiteTimes = finiteTimelineTimes(allTimes);
-
-      const minTime = finiteTimes.length ? Math.min(...finiteTimes) : 0;
-      const maxTime = finiteTimes.length ? Math.max(...finiteTimes) : minTime + 1;
-      const duration = Math.max(0, maxTime - minTime);
-      const normalize = (t) => {
-        const time = Number(t);
-        return Number.isFinite(time) ? time - minTime : 0;
-      };
-
-      const normalizedTraceData = {
-        actions: actions.map((a) => ({
-          ...a,
-          startTime: normalize(a.startTime),
-          endTime: normalize(a.endTime || a.startTime),
-          duration: Math.round((a.endTime || a.startTime || 0) - (a.startTime || 0)),
-        })),
-        network: network.map((n) => ({
-          ...n,
-          startTime: normalize(n.startTime),
-          endTime: normalize(n.endTime || n.startTime),
-          duration: Math.round((n.endTime || n.startTime || 0) - (n.startTime || 0)),
-        })),
-        console: consoleEvents.map((c) => ({ ...c, time: normalize(c.time) })),
-        domSnapshots: domSnapshots.map((s) => ({ ...s, time: normalize(s.time) })),
-        traceEvents: traceEvents.map((e) => ({ ...e, time: normalize(e.time) })),
-        screenshots: resolvedScreenshots
-          .map((s) => ({ ...s, time: normalize(s.time) }))
-          .sort((a, b) => a.time - b.time),
-        groups: groups
-          .map((g) => ({
-            ...g,
-            startTime: normalize(g.startTime),
-            endTime: normalize(g.endTime || g.startTime),
-          }))
-          .sort((a, b) => a.startTime - b.startTime),
-        contextOptions,
-        duration,
-        fileCount: files.length,
-        eventCount: allEvents.length,
-      };
-      normalizedTraceData.skipIdleSegments = buildSkipIdleSegments(normalizedTraceData);
-      setTraceData(normalizedTraceData);
-      setSelectedAction(null);
-      setSelectedConsoleEvent(null);
-
-      setPlayhead(urlParams.at != null ? Math.max(0, Math.min(urlParams.at, duration)) : 0);
-
-      // First-time visitors: open all panels after trace loads
-      const hasStoredPrefs = ["inspector", "timeline", "controls"].some(
-        (k) => localStorage.getItem(`record-panel-${k}`) !== null,
-      );
-      if (!hasStoredPrefs) {
-        const isMobile = window.innerWidth < 768;
-        const isCompact = window.innerHeight < 500;
-        if (!isMobile && !isCompact) {
-          setShowSide(true);
-          setShowTimeline(true);
-        }
-        setShowToolbar(true);
-      }
-    } catch (e) {
-      setError(e.message);
-    }
-    setLoading(false);
-  }, []);
-
-  // Use the shared content detector before the legacy Vibium path. A valid
-  // Twee archive is handed to the reusable player; Vibium stays on the
-  // existing full studio implementation below.
+  // ─── Load recording through player-core ─────────────────────────────────
   const loadRecordingFile = useCallback(async (file, sourceName) => {
+    // Clear the prior document before asynchronous work so an error can never
+    // leave stale screenshots or terminal output visible.
     setLoading(true);
     setError(null);
-    try {
-      const format = await detectRecordingFormat(file);
-      if (format === "twee") {
-        const detected = await parseRecording(file, {
-          source: sourceName || file?.name || undefined,
-        });
-        setTraceData(null);
-        setTweeRecording(detected);
-        setFileList(detected.files);
-        setPlayhead(0);
-        setIsPlaying(false);
-        setLoading(false);
-        return;
-      }
-    } catch (detectionError) {
-      // Existing embedded tests and hosts can inject a JSZip-compatible
-      // reader for legacy, non-ZIP fixtures. Keep that Vibium compatibility,
-      // but production detection failures always surface. In particular, a
-      // malformed Twee archive cannot become a Vibium recording based on its
-      // extension.
-      const hasInjectedLegacyReader = typeof window !== "undefined"
-        && window.JSZip
-        && window.JSZip !== JSZip
-        && typeof window.JSZip.version !== "string";
-      const inputBytes = typeof file?.byteLength === "number" ? file.byteLength : file?.size;
-      const isInjectedFixture = hasInjectedLegacyReader && Number(inputBytes) <= 3;
-      if (!isInjectedFixture) {
-        setError(detectionError instanceof Error ? detectionError.message : String(detectionError));
-        setLoading(false);
-        return;
-      }
-    }
-
+    setTraceData(null);
     setTweeRecording(null);
-    await loadTrace(file);
-  }, [loadTrace]);
+    setFileList([]);
+    setSelectedAction(null);
+    setSelectedPageId(null);
+    setSelectedConsoleEvent(null);
+    setPlayhead(0);
+    setIsPlaying(false);
+    try {
+      const recording = await parseRecording(file, { source: sourceName || file?.name || undefined });
+      setFileList(recording.files);
+      if (recording.format === "twee") {
+        setTweeRecording(recording);
+      } else {
+        const view = browserRecordingView(recording);
+        setTraceData(view);
+        setPlayhead(urlParams.at != null ? Math.max(0, Math.min(urlParams.at, view.duration)) : 0);
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [urlParams.at]);
 
   // ─── Persist panel state ────────────────────────────────────────────────
   useEffect(() => {
@@ -1875,23 +1344,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     [traceData],
   );
 
-  // ─── Current screenshot ─────────────────────────────────────────────────
-  const currentScreenshot = useMemo(() => {
-    if (!traceData) return null;
-    let best = null;
-    for (const s of traceData.screenshots) {
-      if (s.time <= playhead && s.url) best = s;
-    }
-    return best;
-  }, [playhead, traceData]);
-
   // ─── Current action ─────────────────────────────────────────────────────
   const currentAction = useMemo(() => {
     if (!traceData) return null;
 
     // Multiple actions can overlap; choose the most recent one at playhead.
     const candidates = traceData.actions.filter(
-      (a) => playhead >= (a.startTime || 0) - 20 && playhead <= (a.endTime || a.startTime || 0),
+      (a) => playhead >= (a.startTime || 0) && playhead <= (a.endTime || a.startTime || 0),
     );
     if (!candidates.length) return null;
 
@@ -1903,14 +1362,61 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     }, null);
   }, [playhead, traceData]);
 
+  const activePageId = useMemo(() => {
+    if (!traceData) return null;
+    const actionPage = selectedAction?.pageId ?? currentAction?.pageId;
+    if (actionPage) return actionPage;
+    if (selectedPageId) return selectedPageId;
+    const recent = [
+      ...traceData.screenshots.map((item) => ({ pageId: item.pageId, time: item.time })),
+      ...traceData.actions.map((item) => ({ pageId: item.pageId, time: item.startTime })),
+      ...traceData.console.map((item) => ({ pageId: item.pageId, time: item.time })),
+      ...traceData.network.map((item) => ({ pageId: item.pageId, time: item.startTime })),
+    ].filter((item) => item.pageId && item.time <= playhead)
+      .sort((left, right) => right.time - left.time)[0];
+    return recent?.pageId || traceData.pages?.[0]?.id || null;
+  }, [currentAction, playhead, selectedAction, selectedPageId, traceData]);
+
+  // Never fall back across pages: an action on page B must not be painted on
+  // a frame from page A when interleaved traces are replayed.
+  const currentScreenshot = useMemo(() => {
+    if (!traceData) return null;
+    let best = null;
+    for (const screenshot of traceData.screenshots) {
+      if (screenshot.time <= playhead && screenshot.url && (
+        activePageId ? screenshot.pageId === activePageId : !screenshot.pageId
+      )) best = screenshot;
+    }
+    return best;
+  }, [activePageId, playhead, traceData]);
+
+  const pageIds = useMemo(() => {
+    if (!traceData) return [];
+    return [...new Set([
+      ...(traceData.pages || []).map((page) => page.id),
+      ...traceData.screenshots.map((screenshot) => screenshot.pageId),
+      ...traceData.actions.map((action) => action.pageId),
+    ].filter(Boolean))];
+  }, [traceData]);
+
   const overlayAction = useMemo(() => {
     const action = selectedAction || currentAction;
     if (!action) return null;
+    if (!currentScreenshot || action.pageId !== currentScreenshot.pageId) return null;
     if (actionFilter !== "all" && !isHumanAction(action.apiName)) return null;
     if (isClickAction(action.apiName) && playhead >= (action.endTime || action.startTime || 0)) return null;
     if ((action.apiName || "").toLowerCase().includes("waitfor")) return null;
     return action;
-  }, [currentAction, playhead, selectedAction, actionFilter]);
+  }, [currentAction, currentScreenshot, playhead, selectedAction, actionFilter]);
+
+  const activeContextOptions = useMemo(() => {
+    if (!traceData) return undefined;
+    const contextId = overlayAction?.contextId
+      ?? currentScreenshot?.contextId
+      ?? traceData.pages?.find((page) => page.id === activePageId)?.contextId;
+    return traceData.contexts?.find((context) => context.id === contextId)?.options
+      ?? traceData.contextOptions?.options;
+  }, [activePageId, currentScreenshot, overlayAction, traceData]);
 
   const currentGroup = useMemo(() => {
     if (!traceData?.groups) return null;
@@ -2108,7 +1614,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         <div style={{ fontSize: 14, color: V.textDim, marginTop: -4 }}>player.vibium.dev</div>
         <div style={{ color: V.textDim, fontSize: 17 }}>
           Drop a Vibium <code style={{ background: V.bgCard, padding: "2px 6px", borderRadius: 4, color: V.amber }}>.zip</code>
-          {" or Twee "}
+          {", Playwright trace.zip, or Twee "}
           <code style={{ background: V.bgCard, padding: "2px 6px", borderRadius: 4, color: V.amber }}>.twee</code> here
         </div>
 
@@ -2782,6 +2288,17 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               touchAction: "pan-y",
             }}
           >
+            {pageIds.length > 1 && (
+              <label style={{ position: "absolute", top: 8, right: 12, zIndex: 11, fontSize: 12, color: V.textMid, background: V.overlayBg, padding: "4px 6px", borderRadius: 5 }}>
+                Page
+                <select aria-label="Recording page" value={activePageId || ""} onChange={(event) => {
+                  setSelectedAction(null);
+                  setSelectedPageId(event.currentTarget.value);
+                }} style={{ marginLeft: 5, maxWidth: 180 }}>
+                  {pageIds.map((pageId) => <option key={pageId} value={pageId}>{pageId}</option>)}
+                </select>
+              </label>
+            )}
             {/* Current group label */}
             {overlayEnabled && playhead > 0 && currentGroup && (
               <div
@@ -2824,12 +2341,12 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     action={overlayAction}
                     screenshot={currentScreenshot}
                     viewport={
-                      traceData?.contextOptions?.options?.viewport ||
+                      overlayAction?._snapshotMeta?.viewport ||
                       (currentScreenshot?.width && currentScreenshot?.height
                         ? { width: currentScreenshot.width, height: currentScreenshot.height }
-                        : traceData?.fallbackViewport)
+                        : activeContextOptions?.viewport || traceData?.fallbackViewport)
                     }
-                    dpr={traceData?.contextOptions?.options?.deviceScaleFactor}
+                    dpr={activeContextOptions?.deviceScaleFactor}
                     imgEl={imgRef.current}
                     containerEl={screenshotContainerRef.current}
                     showDebug={false}
@@ -2842,18 +2359,18 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       const actions = traceData?.actions || [];
                       let best = null;
                       for (const a of actions) {
-                        if (a.point && (a.startTime || 0) <= playhead + 50) best = a;
+                        if (a.point && a.pageId === currentScreenshot.pageId && (a.startTime || 0) <= playhead + 50) best = a;
                       }
                       return best;
                     })()}
                     screenshot={currentScreenshot}
                     viewport={
-                      traceData?.contextOptions?.options?.viewport ||
+                      overlayAction?._snapshotMeta?.viewport ||
                       (currentScreenshot?.width && currentScreenshot?.height
                         ? { width: currentScreenshot.width, height: currentScreenshot.height }
-                        : traceData?.fallbackViewport)
+                        : activeContextOptions?.viewport || traceData?.fallbackViewport)
                     }
-                    dpr={traceData?.contextOptions?.options?.deviceScaleFactor}
+                    dpr={activeContextOptions?.deviceScaleFactor}
                     imgEl={imgRef.current}
                     containerEl={screenshotContainerRef.current}
                     layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}-${layoutMode}-${screenshotH}`}
@@ -3400,7 +2917,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600, color: isActive ? c : V.textAction }}>
-                              {a.apiName || "action"}
+                              {a.apiName || "action"}{a.pageId ? ` · ${a.pageId}` : ""}
                             </div>
                             <div
                               style={{
@@ -3583,7 +3100,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                             wordBreak: "break-all",
                           }}
                         >
-                          {c.text}
+                          {c.text}{c.pageId ? ` · ${c.pageId}` : ""}
                         </div>
                         <span
                           style={{ fontSize: 12, color: V.textDim, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}
@@ -4128,7 +3645,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             </div>
           </div>
           {/* Filmstrip — hidden on mobile */}
-          {!mobile && !compact && traceData.screenshots.filter((s) => s.url).length > 0 && (
+          {!mobile && !compact && traceData.screenshots.filter((s) => s.url && (activePageId ? s.pageId === activePageId : !s.pageId)).length > 0 && (
             <div
               ref={filmstripRef}
               className="hide-scrollbar"
@@ -4147,7 +3664,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               }}
             >
               {traceData.screenshots
-                .filter((s) => s.url)
+                .filter((s) => s.url && (activePageId ? s.pageId === activePageId : !s.pageId))
                 .map((s, i) => {
                   const active = currentScreenshot === s;
                   return (
@@ -4165,7 +3682,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                             }
                           : undefined
                       }
-                      onClick={() => setPlayhead(s.time)}
+                      onClick={() => {
+                        setSelectedAction(null);
+                        setSelectedPageId(s.pageId || null);
+                        setPlayhead(s.time);
+                      }}
                       onMouseEnter={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         setHoveredThumb({ url: s.url, x: rect.left + rect.width / 2, y: rect.top });
@@ -4735,12 +4256,8 @@ export const __recordStudioInternals = {
   advancePlayheadWithSkip,
   buildSkipIdleSegments,
   finiteTimelineTimes,
-  harMonotonicTimeToMs,
-  harSnapshotStartTimeToMs,
-  inferActionCoordinateBoosts,
   normalizeActionCoords,
-  processTraceEvents,
-  processNetworkEvents,
+  browserRecordingView,
 };
 
 export default RecordStudio;

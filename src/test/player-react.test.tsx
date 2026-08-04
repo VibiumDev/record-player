@@ -113,6 +113,34 @@ describe("RecordPlayer", () => {
     expect(screen.getByAltText("Current recording screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,second");
   });
 
+  it("labels Playwright and keeps interleaved screenshots on the active page", () => {
+    const playwright: LoadedRecording = {
+      version: 1, format: "playwright", presentation: { kind: "screenshot" }, source: "trace.zip",
+      files: ["trace.trace"], metadata: { fileCount: 1, eventCount: 2, traceEventCount: 2, networkEventCount: 0, schemaVersions: [8], warnings: [] },
+      contexts: [], pages: [{ id: "page-a" }, { id: "page-b" }], raw: { traceEvents: [], networkEvents: [], stacks: [] },
+      timeline: {
+        startTime: 0, endTime: 100, duration: 100,
+        events: [
+          { id: "a", kind: "action", time: 0, data: {}, browser: { pageId: "page-a" } },
+          { id: "b", kind: "action", time: 50, data: {}, browser: { pageId: "page-b" } },
+        ],
+        screenshots: [
+          { id: "a", sha1: "a", time: 0, pageId: "page-a", mimeType: "image/jpeg", dataUrl: "data:image/jpeg;base64,page-a" },
+          { id: "b", sha1: "b", time: 100, pageId: "page-b", mimeType: "image/jpeg", dataUrl: "data:image/jpeg;base64,page-b" },
+        ],
+      },
+    };
+    render(<RecordPlayer recording={playwright} timeline="hidden" inspector="hidden" />);
+    expect(screen.getByText("Playwright")).toBeInTheDocument();
+    expect(screen.getByAltText("Current recording screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,page-a");
+    fireEvent.change(screen.getByRole("slider", { name: "Playback position" }), { target: { value: "50" } });
+    expect(screen.getByRole("status")).toHaveTextContent("No screenshot for the selected page");
+    expect(screen.queryByAltText("Current recording screenshot")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("slider", { name: "Playback position" }), { target: { value: "100" } });
+    expect(screen.getByAltText("Current recording screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,page-b");
+    expect(screen.getByLabelText("Recording page")).toHaveValue("page-b");
+  });
+
   it("enters and exits fullscreen while keeping the player state synchronized", async () => {
     const requestFullscreen = vi.fn().mockResolvedValue(undefined);
     const exitFullscreen = vi.fn().mockResolvedValue(undefined);
