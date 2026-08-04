@@ -136,12 +136,12 @@ describe("TerminalPresentation playback", () => {
     expect(await screen.findByText("AB", {}, { timeout: 1000 })).toBeInTheDocument();
     expect(terminal.screen).toBe("AB");
     expect(terminal.writes).toEqual(["A", "B"]);
-    const restart = await screen.findByRole("button", { name: "Play recording" });
+    const restart = await screen.findByRole("button", { name: "Replay recording" });
 
     fireEvent.click(restart);
     await waitFor(() => expect(terminal.resets).toEqual([[80, 24]]));
     await waitFor(() => expect(terminal.writes).toEqual(["A", "B", "A", "B"]));
-    expect(await screen.findByRole("button", { name: "Play recording" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Replay recording" })).toBeInTheDocument();
   });
 
   it("pauses and continues without applying future output while paused", async () => {

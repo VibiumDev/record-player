@@ -29,7 +29,7 @@ function credentialsAttribute(value: string | null): RequestCredentials {
 
 export class VibiumRecordPlayerElement extends HTMLElement {
   static get observedAttributes() {
-    return ["src", "credentials", "inspector", "timeline"];
+    return ["src", "credentials", "inspector", "timeline", "recording-title"];
   }
 
   private root: Root | null = null;
@@ -37,6 +37,14 @@ export class VibiumRecordPlayerElement extends HTMLElement {
 
   get credentials(): RequestCredentials {
     return credentialsAttribute(this.getAttribute("credentials"));
+  }
+
+  get recordingTitle(): string {
+    return this.getAttribute("recording-title") ?? "";
+  }
+
+  set recordingTitle(value: string) {
+    this.setAttribute("recording-title", value);
   }
 
   set credentials(value: RequestCredentials) {
@@ -67,6 +75,7 @@ export class VibiumRecordPlayerElement extends HTMLElement {
     const credentials = this.credentials;
     const inspector = visibilityAttribute(this.getAttribute("inspector"));
     const timeline = visibilityAttribute(this.getAttribute("timeline"));
+    const displayTitle = this.getAttribute("recording-title") ?? undefined;
 
     if (!src) {
       this.root.render(<div role="alert">Missing recording src</div>);
@@ -80,6 +89,7 @@ export class VibiumRecordPlayerElement extends HTMLElement {
         credentials={credentials}
         inspector={inspector}
         timeline={timeline}
+        displayTitle={displayTitle}
         onReady={(recording) => {
           const detail: VibiumRecordPlayerReadyDetail = { recording };
           this.dispatchEvent(

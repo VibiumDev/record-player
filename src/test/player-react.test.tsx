@@ -66,42 +66,21 @@ describe("RecordPlayer", () => {
     expect(screen.getByRole("button", { name: "Pause recording" })).toBeInTheDocument();
   });
 
-  it("renders both play/pause labels stacked so the button width never changes", () => {
+  it("uses a compact central play/pause control", () => {
     render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
 
     const button = screen.getByRole("button", { name: "Play recording" });
-    const labels = Array.from(button.querySelectorAll("span")).map((span) => ({
-      text: span.textContent,
-      hidden: span.style.visibility === "hidden",
-    }));
-    expect(labels).toEqual([
-      { text: "❚❚ Pause", hidden: true },
-      { text: "▶ Play", hidden: false },
-    ]);
+    expect(button).toHaveTextContent("▶");
 
     fireEvent.click(button);
 
-    const paused = Array.from(
-      screen.getByRole("button", { name: "Pause recording" }).querySelectorAll("span"),
-    ).map((span) => ({ text: span.textContent, hidden: span.style.visibility === "hidden" }));
-    expect(paused).toEqual([
-      { text: "❚❚ Pause", hidden: false },
-      { text: "▶ Play", hidden: true },
-    ]);
+    expect(screen.getByRole("button", { name: "Pause recording" })).toHaveTextContent("❚❚");
   });
 
-  it("reserves a fixed-width elapsed label so the slider does not resize during playback", () => {
+  it("uses media-style elapsed time in the bottom transport", () => {
     render(<RecordPlayer recording={recording()} timeline="hidden" inspector="hidden" />);
 
-    // Widest possible label for this recording is the formatted duration
-    // ("1.00s" = 5 characters); the elapsed label must hold that width from
-    // the start or the flexed slider re-lays-out on every tick.
-    const elapsed = screen.getByText("0ms");
-    expect(elapsed).toHaveStyle({
-      width: "5ch",
-      textAlign: "right",
-      fontVariantNumeric: "tabular-nums",
-    });
+    expect(screen.getByText("0:00")).toBeInTheDocument();
   });
 
   it("seeks to screenshots with the playback slider", () => {
@@ -109,7 +88,6 @@ describe("RecordPlayer", () => {
 
     fireEvent.change(screen.getByRole("slider", { name: "Playback position" }), { target: { value: "1000" } });
 
-    expect(screen.getByText("Screenshot at 1.00s")).toBeInTheDocument();
     expect(screen.getByAltText("Current recording screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,second");
   });
 
@@ -131,7 +109,9 @@ describe("RecordPlayer", () => {
       },
     };
     render(<RecordPlayer recording={playwright} timeline="hidden" inspector="hidden" />);
-    expect(screen.getByText("Playwright")).toBeInTheDocument();
+    expect(screen.queryByText("Playwright")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Recording information" }));
+    expect(screen.getByRole("dialog", { name: "Recording information" })).toHaveTextContent("playwright");
     expect(screen.getByAltText("Current recording screenshot")).toHaveAttribute("src", "data:image/jpeg;base64,page-a");
     fireEvent.change(screen.getByRole("slider", { name: "Playback position" }), { target: { value: "50" } });
     expect(screen.getByRole("status")).toHaveTextContent("No screenshot for the selected page");
@@ -153,11 +133,11 @@ describe("RecordPlayer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
     expect(requestFullscreen).toHaveBeenCalledTimes(1);
 
-    const root = screen.getByRole("heading", { name: "Record Player" }).closest("section");
+    const root = document.querySelector("[data-record-player-root]");
     fullscreenElement = root;
     fireEvent(document, new Event("fullscreenchange"));
     expect(screen.getByRole("button", { name: "Exit fullscreen" })).toBeInTheDocument();
-    expect(screen.getByTestId("screenshot-presentation")).toHaveStyle({ flex: "1 1 0" });
+    expect(root).toHaveAttribute("data-record-player-state", "paused");
 
     fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
     expect(exitFullscreen).toHaveBeenCalledTimes(1);

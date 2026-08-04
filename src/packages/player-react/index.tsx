@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   loadRecording,
@@ -27,6 +27,8 @@ export { advanceTweePlayhead, TWEE_MAX_IDLE_MS } from "./twee-transport";
 
 export interface RecordPlayerProps {
   recording: LoadedRecording;
+  /** Host-owned label displayed over the recording. */
+  displayTitle?: React.ReactNode;
   inspector?: boolean | "visible" | "hidden";
   timeline?: boolean | "visible" | "hidden";
   className?: string;
@@ -50,6 +52,16 @@ function formatMs(value: number): string {
   if (!Number.isFinite(value)) return "0ms";
   if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(2)}s`;
   return `${Math.round(value)}ms`;
+}
+
+function formatClock(value: number): string {
+  const seconds = Math.max(0, Math.floor(value / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function recordingTitle(recording: LoadedRecording): string {
+  const source = recording.source?.split(/[\\/]/).filter(Boolean).pop();
+  return source || "Recording";
 }
 
 function optionVisible(
@@ -157,34 +169,15 @@ function BrowserPresentation({
   return (
     <figure
       data-testid="screenshot-presentation"
-      style={{
-        margin: isFullscreen ? 0 : "16px 0",
-        border: "1px solid #d7dce3",
-        borderRadius: 8,
-        overflow: "hidden",
-        ...(isFullscreen ? { display: "flex", flex: "1 1 0", minHeight: 0, flexDirection: "column" as const } : {}),
-      }}
+      className="vrp-presentation"
     >
       <img
         src={currentScreenshot.dataUrl}
         alt="Current recording screenshot"
-        style={{
-          display: "block",
-          width: "100%",
-          maxHeight: isFullscreen ? "none" : 420,
-          height: isFullscreen ? "100%" : undefined,
-          flex: isFullscreen ? "1 1 0" : undefined,
-          minHeight: 0,
-          objectFit: "contain",
-          background: "#101419",
-        }}
+        className="vrp-screenshot"
       />
-      <figcaption style={{ padding: 8, fontSize: 12, color: "#5f6b7a" }}>
-        Screenshot at {formatMs(currentScreenshot.time)}
-        {activePageId ? ` · ${activePageId}` : ""}
-      </figcaption>
       {pageIds.length > 1 ? (
-        <label style={{ padding: "0 8px 8px", fontSize: 12, color: "#5f6b7a" }}>
+        <label className="vrp-page-selector">
           Page
           <select aria-label="Recording page" value={activePageId ?? ""} onChange={(event) => onSelectPage(event.currentTarget.value)} style={{ marginLeft: 6 }}>
             {pageIds.map((pageId) => <option key={pageId} value={pageId}>{pageId}</option>)}
@@ -202,7 +195,7 @@ function TweeDetails({ recording, isFullscreen = false }: { recording: TweeRecor
   const exit = [...recording.terminalEvents].reverse().find((event) => event.type === "exit");
 
   return (
-    <div style={{ marginTop: 16, border: "1px solid #d7dce3", borderRadius: 8, overflow: "auto", maxHeight: isFullscreen ? 180 : undefined, flexShrink: 0 }}>
+    <div className="vrp-advanced">
       <div
         style={{
           display: "grid",
@@ -246,6 +239,7 @@ function TweeDetails({ recording, isFullscreen = false }: { recording: TweeRecor
 
 export function RecordPlayer({
   recording,
+  displayTitle,
   inspector = true,
   timeline = true,
   className,
@@ -259,6 +253,13 @@ export function RecordPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const currentTimeRef = useRef(0);
   const [playing, setPlaying] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
+  const wasPlayingBeforeScrub = useRef(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const infoID = useId();
+  const infoButtonRef = useRef<HTMLButtonElement | null>(null);
+  const infoPanelRef = useRef<HTMLDivElement | null>(null);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const [selectedPageId, setSelectedPageId] = useState<string | undefined>();
   const rootRef = useRef<HTMLElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -280,6 +281,19 @@ export function RecordPlayer({
     [events, recording],
   );
   const markers = useMemo(() => timelineMarkers(recording), [recording]);
+  const ended = duration > 0 && currentTime >= duration;
+  const title = displayTitle ?? recordingTitle(recording);
+
+  const revealControls = useCallback(() => setControlsVisible(true), []);
+  const beginScrubbing = useCallback(() => {
+    wasPlayingBeforeScrub.current = playing;
+    setPlaying(false);
+    setScrubbing(true);
+  }, [playing]);
+  const endScrubbing = useCallback(() => {
+    setScrubbing(false);
+    if (wasPlayingBeforeScrub.current) setPlaying(true);
+  }, []);
 
   const seek = useCallback((value: number) => {
     const next = Math.min(duration, Math.max(0, value));
@@ -292,7 +306,32 @@ export function RecordPlayer({
     setCurrentTime(0);
     setPlaying(false);
     setSelectedPageId(undefined);
+    setInfoOpen(false);
+    setControlsVisible(true);
   }, [recording]);
+
+  useEffect(() => {
+    if (!playing || scrubbing || infoOpen) { setControlsVisible(true); return; }
+    const timer = window.setTimeout(() => setControlsVisible(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, [playing, scrubbing, infoOpen, currentTime]);
+
+  useEffect(() => {
+    if (!infoOpen) return;
+    infoPanelRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setInfoOpen(false); infoButtonRef.current?.focus(); }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!infoPanelRef.current?.contains(event.target as Node) && !infoButtonRef.current?.contains(event.target as Node)) {
+        setInfoOpen(false);
+        infoButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => { document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerdown", onPointerDown); };
+  }, [infoOpen]);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === rootRef.current);
@@ -356,91 +395,34 @@ export function RecordPlayer({
     <section
       ref={rootRef}
       className={className}
-      style={{
-        boxSizing: "border-box",
-        width: "100%",
-        maxWidth: isFullscreen ? "none" : "100%",
-        height: isFullscreen ? "100%" : undefined,
-        overflow: isFullscreen ? "hidden" : "hidden",
-        padding: 16,
-        borderRadius: isFullscreen ? 0 : 8,
-        background: "#ffffff",
-        fontFamily: "system-ui, sans-serif",
-        color: "#172033",
-        display: isFullscreen ? "flex" : undefined,
-        flexDirection: isFullscreen ? "column" : undefined,
-        ...style,
-      }}
+      data-record-player-root
+      data-record-player-state={playing ? (controlsVisible ? "playing-interacting" : "playing-idle") : ended ? "ended" : "paused"}
+      onPointerMove={revealControls}
+      onPointerDown={revealControls}
+      onFocusCapture={revealControls}
+      style={style}
     >
-      <header style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "baseline", minWidth: 0 }}>
-        <div style={{ minWidth: 0 }}>
-          <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Record Player</h2>
-          <div style={{ color: "#5f6b7a", fontSize: 13, overflowWrap: "anywhere" }}>
-            {recording.source ? `${recording.source} · ` : ""}
-            <strong>{recording.format === "twee" ? "Twee" : recording.format === "playwright" ? "Playwright" : "Vibium"}</strong>
-            {` · ${recording.metadata.fileCount} files · ${recording.metadata.eventCount} events · ${formatMs(duration)}`}
-          </div>
-        </div>
-        <div aria-label="event counts" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 }}>
-          {Object.entries(counts).map(([kind, count]) => (
-            <span key={kind} style={{ border: "1px solid #d7dce3", borderRadius: 999, padding: "2px 8px", fontSize: 12, whiteSpace: "nowrap" }}>
-              {kind}: {count}
-            </span>
-          ))}
-        </div>
-      </header>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "16px 0", flexWrap: "wrap" }}>
+      <div data-record-player-presentation className="vrp-content">
+        {recording.format === "twee" ? (
+          <TerminalPresentation recording={recording} currentTime={currentTime} terminalFactory={terminalFactory} isFullscreen />
+        ) : <BrowserPresentation recording={recording} currentTime={currentTime} selectedPageId={selectedPageId} onSelectPage={setSelectedPageId} isFullscreen />}
+      </div>
+      <div className={`vrp-chrome ${controlsVisible || !playing || scrubbing || infoOpen ? "vrp-chrome-visible" : ""}`}>
+        <div className="vrp-top"><h2>{title}</h2><button ref={infoButtonRef} type="button" className="vrp-icon" aria-label="Recording information" aria-expanded={infoOpen} aria-controls={infoID} onClick={() => setInfoOpen((value) => !value)}>ⓘ</button></div>
         <button
           type="button"
           onClick={() => {
-            if (duration > 0 && currentTime >= duration) seek(0);
+            if (ended) seek(0);
             setPlaying((value) => !value);
           }}
-          aria-label={playing ? "Pause recording" : "Play recording"}
-          style={{
-            border: "1px solid #1f2937",
-            borderRadius: 999,
-            background: "#172033",
-            color: "#ffffff",
-            cursor: "pointer",
-            fontWeight: 700,
-            padding: "8px 16px",
-            display: "grid",
-            justifyItems: "center",
-          }}
+          className="vrp-play"
+          aria-label={playing ? "Pause recording" : ended ? "Replay recording" : "Play recording"}
         >
-          <span aria-hidden={!playing} style={{ gridArea: "1 / 1", visibility: playing ? "visible" : "hidden" }}>
-            ❚❚ Pause
-          </span>
-          <span aria-hidden={playing} style={{ gridArea: "1 / 1", visibility: playing ? "hidden" : "visible" }}>
-            ▶ Play
-          </span>
+          <span aria-hidden="true">{playing ? "❚❚" : ended ? "↻" : "▶"}</span>
         </button>
-        {fullscreenSupported ? (
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-            style={{
-              border: "1px solid #64748b", borderRadius: 999, background: "#ffffff", color: "#172033",
-              cursor: "pointer", fontWeight: 600, padding: "8px 12px",
-            }}
-          >
-            {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-          </button>
-        ) : null}
-        <label style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 260px", minWidth: 0, fontSize: 13, color: "#5f6b7a" }}>
-          <span
-            style={{
-              width: `${formatMs(duration).length}ch`,
-              textAlign: "right",
-              fontVariantNumeric: "tabular-nums",
-              flexShrink: 0,
-            }}
-          >
-            {formatMs(currentTime)}
-          </span>
+        <div className="vrp-bottom">
+          <span>{formatClock(currentTime)}</span>
+          <label className="vrp-scrubber">
           <input
             aria-label="Playback position"
             type="range"
@@ -448,86 +430,27 @@ export function RecordPlayer({
             max={duration || 0}
             step={1}
             value={Math.min(currentTime, duration || 0)}
+            onPointerDown={beginScrubbing}
+            onFocus={revealControls}
+            onKeyDown={(event) => { if (["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key) && !scrubbing) beginScrubbing(); }}
             onChange={(event) => seek(Number(event.currentTarget.value))}
-            style={{ flex: "1 1 auto", minWidth: 120 }}
+            onPointerUp={endScrubbing}
+            onKeyUp={endScrubbing}
           />
-          <span>{formatMs(duration)}</span>
-        </label>
-      </div>
-
-      {fullscreenError ? <div role="status" aria-live="polite" style={{ color: "#b42318", fontSize: 13, marginBottom: 8 }}>{fullscreenError}</div> : null}
-
-      <div data-record-player-presentation style={isFullscreen ? { display: "flex", flex: "1 1 0", minHeight: 0 } : undefined}>
-        {recording.format === "twee" ? (
-          <TerminalPresentation
-            recording={recording}
-            currentTime={currentTime}
-            terminalFactory={terminalFactory}
-            isFullscreen={isFullscreen}
-            style={isFullscreen ? { flex: "1 1 0", minHeight: 0 } : undefined}
-          />
-        ) : (
-          <BrowserPresentation recording={recording} currentTime={currentTime} selectedPageId={selectedPageId} onSelectPage={setSelectedPageId} isFullscreen={isFullscreen} />
-        )}
-      </div>
-
-      {showTimeline ? (
-        <div aria-label="recording timeline" style={{ margin: "16px 0", flexShrink: 0 }}>
-          <div style={{ height: 8, borderRadius: 999, background: "#edf1f7", position: "relative" }}>
-            {markers.map((event) => {
-              const kind = eventKind(recording, event);
-              return (
-                <span
-                  key={event.id}
-                  title={`${kind} ${formatMs(event.time)}`}
-                  style={{
-                    position: "absolute",
-                    left: `${duration ? (event.time / duration) * 100 : 0}%`,
-                    top: -4,
-                    width: 4,
-                    height: 16,
-                    borderRadius: 2,
-                    background: kind === "action" || kind === "input" ? "#f97316" : kind === "network" || kind === "resize" ? "#2563eb" : kind === "console" || kind === "exit" ? "#7c3aed" : "#64748b",
-                  }}
-                />
-              );
-            })}
-          </div>
+          {showTimeline ? <span className="vrp-markers" aria-label="recording timeline">{markers.map((event) => {
+            const kind = eventKind(recording, event); return <i key={event.id} title={`${kind} ${formatMs(event.time)}`} style={{ left: `${duration ? (event.time / duration) * 100 : 0}%` }} />;
+          })}</span> : null}
+          </label><span>{formatClock(duration)}</span>
+          {fullscreenSupported ? <button type="button" className="vrp-icon" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>⛶</button> : null}
         </div>
-      ) : null}
-
-      {showInspector ? (
-        recording.format === "twee" ? (
-          <TweeDetails recording={recording} isFullscreen={isFullscreen} />
-        ) : (
-          <div style={{ border: "1px solid #d7dce3", borderRadius: 8, overflow: "hidden", maxHeight: isFullscreen ? 180 : undefined, flexShrink: 0 }}>
-            <div style={{ padding: "8px 12px", background: "#f8fafc", fontWeight: 600 }}>Events</div>
-            <ol style={{ margin: 0, padding: 0, listStyle: "none", maxHeight: 360, overflow: "auto" }}>
-              {recording.timeline.events.slice(0, 200).map((event) => (
-                <li
-                  key={event.id}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "90px 90px minmax(0, 1fr)",
-                    gap: 8,
-                    padding: "8px 12px",
-                    borderTop: "1px solid #edf1f7",
-                    fontSize: 13,
-                    minWidth: 0,
-                  }}
-                >
-                  <time>{formatMs(event.time)}</time>
-                  <span>{event.kind}</span>
-                  <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-                    {event.title ?? event.method ?? event.type ?? event.id}
-                    {event.browser?.pageId ? ` · ${event.browser.pageId}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )
-      ) : null}
+      </div>
+      {fullscreenError ? <div role="status" className="vrp-error">{fullscreenError}</div> : null}
+      {infoOpen ? <div id={infoID} ref={infoPanelRef} role="dialog" aria-label="Recording information" tabIndex={-1} onKeyDown={(event) => { if (event.key === "Tab") { event.preventDefault(); infoPanelRef.current?.focus(); } }} className="vrp-info"><dl>
+        <dt>Source</dt><dd>{recording.source || "—"}</dd><dt>Format</dt><dd>{recording.format}</dd><dt>Duration</dt><dd>{formatMs(duration)}</dd><dt>Files</dt><dd>{recording.metadata.fileCount}</dd><dt>Events</dt><dd>{recording.metadata.eventCount}</dd>
+        {Object.entries(counts).map(([kind, count]) => <React.Fragment key={kind}><dt>{kind}</dt><dd>{count}</dd></React.Fragment>)}
+        {recording.format === "twee" ? <><dt>Command</dt><dd>{recording.manifest.command.join(" ") || "—"}</dd><dt>Terminal</dt><dd>{recording.manifest.cols} × {recording.manifest.rows}</dd><dt>Input</dt><dd>{recording.terminalEvents.filter((event) => event.type === "input").length}</dd><dt>Resizes</dt><dd>{recording.terminalEvents.filter((event) => event.type === "resize").length}</dd><dt>Exit</dt><dd>{[...recording.terminalEvents].reverse().find((event) => event.type === "exit")?.type === "exit" ? ([...recording.terminalEvents].reverse().find((event) => event.type === "exit") as TweeEvent & { type: "exit" }).code : "not recorded"}</dd></> : <><dt>Screenshots</dt><dd>{recording.timeline.screenshots.length}</dd>{recording.format === "playwright" ? <><dt>Pages</dt><dd>{recording.pages.length}</dd><dt>Warnings</dt><dd>{recording.metadata.warnings.join("; ") || "none"}</dd></> : null}</>}
+      </dl></div> : null}
+      {showInspector ? <details className="vrp-inspector"><summary>Advanced inspector</summary>{recording.format === "twee" ? <TweeDetails recording={recording} /> : <ol>{recording.timeline.events.slice(0, 200).map((event) => <li key={event.id}>{formatMs(event.time)} {eventKind(recording, event)} {event.title ?? event.method ?? event.type ?? event.id}</li>)}</ol>}</details> : null}
     </section>
   );
 }

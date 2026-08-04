@@ -237,8 +237,9 @@ describe("RecordStudio console UI", () => {
     render(<RecordStudio initialFile={first} />);
 
     expect(await screen.findByText(/first\.twee/)).toBeInTheDocument();
-    expect(screen.getByText("Twee")).toBeInTheDocument();
-    expect(screen.getByText(/first-command/)).toBeInTheDocument();
+    expect(screen.queryByText("Twee")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Recording information" }));
+    expect(screen.getByRole("dialog", { name: "Recording information" })).toHaveTextContent("twee");
     expect(screen.queryByRole("button", { name: /Log \(/ })).not.toBeInTheDocument();
 
     const second = await tweeFile("second.zip", "second-command");

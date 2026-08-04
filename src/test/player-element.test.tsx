@@ -50,6 +50,24 @@ describe("player-element", () => {
     expect(element.credentials).toBe("same-origin");
   });
 
+  it("keeps light-DOM descendants and updates the recording title without reloading", async () => {
+    defineVibiumRecordPlayerElement();
+    const data = await readFile(resolve(process.cwd(), "public/vibium-demo-record.zip"));
+    const fetchMock = vi.fn(async () => new Response(data, { status: 200, statusText: "OK" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const element = document.createElement("vibium-record-player") as VibiumRecordPlayerElement;
+    element.setAttribute("src", "https://example.test/record.zip");
+    element.recordingTitle = "First title";
+    act(() => document.body.appendChild(element));
+    expect(await screen.findByRole("heading", { name: "First title" })).toBeInTheDocument();
+    act(() => { element.setAttribute("recording-title", "Updated title"); });
+    expect(screen.getByRole("heading", { name: "Updated title" })).toBeInTheDocument();
+    expect(element.shadowRoot).toBeNull();
+    expect(element.querySelector("[data-record-player-root]")).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    act(() => document.body.removeChild(element));
+  });
+
   it("renders the player and dispatches a ready event for a valid recording", async () => {
     defineVibiumRecordPlayerElement();
     const data = await readFile(resolve(process.cwd(), "public/vibium-demo-record.zip"));
