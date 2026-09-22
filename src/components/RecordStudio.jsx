@@ -279,6 +279,12 @@ const lightSurface = {
 };
 
 // ─── Color helpers ──────────────────────────────────────────────────────────
+function elementSetAction(apiName) {
+  // Match Vibium element setters specifically, not Cookies.set or Clock.set*.
+  const match = /^(?:vibium:)?element\.(set|unset)$/i.exec(apiName || "");
+  return match ? (match[1].toLowerCase() === "set" ? "Set" : "Unset") : null;
+}
+
 function actionColor(apiName) {
   const n = (apiName || "").toLowerCase();
   if (n.includes("goto") || n.includes("navigate")) return brand.orange;
@@ -286,7 +292,7 @@ function actionColor(apiName) {
   if (n.includes("fill") || n.includes("type") || n.includes("press")) return brand.amber;
   if (n.includes("wait") || n.includes("expect")) return brand.purple;
   if (n.includes("screenshot")) return brand.sunset;
-  if (n.includes("check") || n.includes("assert")) return "#22c55e";
+  if (elementSetAction(apiName) || n.includes("check") || n.includes("assert")) return "#22c55e";
   if (n.includes("find") || n.includes("locator") || n.includes("getby")) return brand.grape;
   if (n.includes("text")) return brand.magenta;
   return brand.orange;
@@ -332,6 +338,9 @@ function humanizeAction(action, mask = true) {
   if (n.includes("dblclick")) return "Double-click " + (short || "element");
   if (n.includes("click")) return "Click " + (short || "element");
   if (n.includes("press")) return "Press " + (p.key || p.value || "key");
+  const setter = elementSetAction(action.apiName);
+  if (setter) return setter + " " + (short || "checkbox");
+  // Playwright recordings still use check/uncheck for checkbox actions.
   if (n.includes("check") && !n.includes("uncheck")) return "Check " + (short || "checkbox");
   if (n.includes("uncheck")) return "Uncheck " + (short || "checkbox");
   if (n.includes("select")) return "Select " + (p.value || p.label || "option");
@@ -350,6 +359,7 @@ function humanizeAction(action, mask = true) {
 function isHumanAction(apiName) {
   const n = (apiName || "").toLowerCase();
   return (
+    !!elementSetAction(apiName) ||
     n.includes("goto") ||
     n.includes("navigate") ||
     n.includes("click") ||
@@ -4253,8 +4263,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 });
 
 export const __recordStudioInternals = {
+  actionColor,
   advancePlayheadWithSkip,
   buildSkipIdleSegments,
+  humanizeAction,
+  isHumanAction,
   finiteTimelineTimes,
   normalizeActionCoords,
   browserRecordingView,

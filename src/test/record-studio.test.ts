@@ -47,3 +47,24 @@ describe("RecordStudio core adapter", () => {
     expect(norm?.bh).toBeCloseTo(49);
   });
 });
+
+describe("RecordStudio checkbox action names", () => {
+  const { actionColor, humanizeAction, isHumanAction } = __recordStudioInternals;
+
+  it("shows Vibium setters in the action filter with readable labels", () => {
+    for (const [apiName, label] of [["Element.set", "Set"], ["Element.unset", "Unset"], ["vibium:element.set", "Set"]]) {
+      expect(isHumanAction(apiName)).toBe(true);
+      expect(humanizeAction({ apiName, params: { selector: "#consent" } })).toBe(`${label} #consent`);
+      expect(actionColor(apiName)).toBe(actionColor("Locator.check"));
+    }
+    expect(isHumanAction("Cookies.set")).toBe(false);
+    expect(isHumanAction("Clock.setFixedTime")).toBe(false);
+  });
+
+  it("retains Playwright checkbox names when displaying its recordings", () => {
+    for (const [apiName, label] of [["Locator.check", "Check"], ["Locator.uncheck", "Uncheck"]]) {
+      expect(isHumanAction(apiName)).toBe(true);
+      expect(humanizeAction({ apiName, params: { selector: "#consent" } })).toBe(`${label} #consent`);
+    }
+  });
+});
