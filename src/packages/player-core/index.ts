@@ -110,9 +110,57 @@ export interface TerminalPresentation {
   initialRows: number;
 }
 
+/** One audio file of a recording: 16-bit PCM WAV bytes, read from the archive. */
+export interface RecordingAudioFile {
+  id: string;
+  file: string;
+  durationMs: number;
+  /** The WAV file's bytes. Absent when the archive names a file it does not hold. */
+  data?: Uint8Array;
+}
+
+/** What a target played, as one continuous track. Times are recording time in ms. */
+export interface RecordingAudioTrack extends RecordingAudioFile {
+  target?: string;
+  startMs: number;
+  speech: Array<{ startMs: number; endMs: number }>;
+}
+
+/** A clip that was spoken into a target, and each time it was played. */
+export interface RecordingAudioClip extends RecordingAudioFile {
+  text?: string;
+  provider?: string;
+  model?: string;
+  voice?: string;
+  plays: Array<{ callId?: string; startMs: number; endMs: number }>;
+}
+
+/** What one listen heard. */
+export interface RecordingAudioTranscript {
+  callId?: string;
+  track?: string;
+  text?: string;
+  onsetMs?: number;
+  speechEndMs?: number;
+  latencyMs?: number;
+}
+
+/**
+ * The audio of a Vibium recording (audio/index.json, version 1). Its times
+ * are milliseconds since the recording started; subtract
+ * `timeline.startTime` to place them on the normalized timeline.
+ */
+export interface RecordingAudio {
+  tracks: RecordingAudioTrack[];
+  clips: RecordingAudioClip[];
+  transcripts: RecordingAudioTranscript[];
+}
+
 export interface VibiumRecording extends RecordingBase<TimelineModel> {
   format: "vibium";
   presentation: ScreenshotPresentation;
+  /** Present when the recording carries audio. */
+  audio?: RecordingAudio;
   metadata: RecordingMetadata & {
     fileCount: number;
     eventCount: number;
@@ -1259,6 +1307,58 @@ async function readResources(
   return resources;
 }
 
+const AUDIO_MANIFEST = "audio/index.json";
+
+/**
+ * Reads the audio a recording carries: its manifest, and the WAV files the
+ * manifest names. An archive without one, or with a version this reader
+ * does not know, has no audio: older and newer recordings still open.
+ */
+async function readAudio(zipFiles: Record<string, ZipFile>): Promise<RecordingAudio | undefined> {
+  const entry = zipFiles[AUDIO_MANIFEST];
+  if (!entry || entry.dir) return undefined;
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = asRecord(JSON.parse(await entry.async("string")));
+  } catch {
+    return undefined;
+  }
+  if (manifest.version !== 1) return undefined;
+  const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  const str = (value: unknown) => (typeof value === "string" ? value : undefined);
+  const bytes = async (file: unknown) => {
+    const name = str(file);
+    // Only files under audio/ are read: a manifest cannot point elsewhere.
+    if (!name || !name.startsWith("audio/") || !zipFiles[name] || zipFiles[name].dir) return undefined;
+    return zipFiles[name].async("uint8array");
+  };
+  const list = (value: unknown) => (Array.isArray(value) ? value.map(asRecord) : []);
+  const spans = (value: unknown) => list(value).map((item) => ({ startMs: num(item.startMs), endMs: num(item.endMs) }));
+  const tracks: RecordingAudioTrack[] = [];
+  for (const item of list(manifest.tracks)) {
+    tracks.push({
+      id: str(item.id) || "", file: str(item.file) || "", target: str(item.target),
+      startMs: num(item.startMs), durationMs: num(item.durationMs), speech: spans(item.speech), data: await bytes(item.file),
+    });
+  }
+  const clips: RecordingAudioClip[] = [];
+  for (const item of list(manifest.clips)) {
+    clips.push({
+      id: str(item.id) || "", file: str(item.file) || "", durationMs: num(item.durationMs),
+      text: str(item.text), provider: str(item.provider), model: str(item.model), voice: str(item.voice),
+      plays: list(item.plays).map((play) => ({ callId: str(play.callId), startMs: num(play.startMs), endMs: num(play.endMs) })),
+      data: await bytes(item.file),
+    });
+  }
+  const transcripts: RecordingAudioTranscript[] = list(manifest.transcripts).map((item) => ({
+    callId: str(item.callId), track: str(item.track), text: str(item.text),
+    onsetMs: typeof item.onsetMs === "number" ? item.onsetMs : undefined,
+    speechEndMs: typeof item.speechEndMs === "number" ? item.speechEndMs : undefined,
+    latencyMs: typeof item.latencyMs === "number" ? item.latencyMs : undefined,
+  }));
+  return { tracks, clips, transcripts };
+}
+
 function buildTimeline(events: RecordingEvent[], screenshots: ScreenshotIndex[]): TimelineModel {
   const times = [
     ...events.flatMap((event) => [event.time, event.endTime]),
@@ -1342,11 +1442,13 @@ async function parseVibiumRecording(
   const events = mergeCallLifecycles(allRawEvents.map(normalizeEvent));
   const screenshots = extractScreenshotRefs(traceEvents, resources);
   const contextOptions = traceEvents.map(asRecord).find((event) => event.type === "context-options");
+  const audio = await readAudio(zipFiles);
 
   return {
     version: 1,
     format: "vibium",
     presentation: { kind: "screenshot" },
+    ...(audio ? { audio } : {}),
     source: options.source,
     files,
     metadata: {

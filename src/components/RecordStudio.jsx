@@ -132,6 +132,50 @@ function shortUrl(url) {
 // this adapter shallow: it only names fields the existing inspector expects;
 // archive parsing, lifecycle folding, clock normalization, HAR conversion and
 // resource decoding all belong to player-core.
+// The audio of a recording as the player schedules it: every stretch of
+// sound with where it starts on the player's timeline. A recording's audio
+// times count from the recording's start; the timeline's from its first event.
+function audioView(recording) {
+  const audio = recording.format === "vibium" ? recording.audio : undefined;
+  if (!audio) return null;
+  const shift = recording.timeline.startTime || 0;
+  const sounds = [];
+  for (const track of audio.tracks || []) {
+    if (track.data) sounds.push({ id: track.id, kind: "heard", data: track.data, startTime: track.startMs - shift });
+  }
+  for (const clip of audio.clips || []) {
+    if (!clip.data) continue;
+    (clip.plays || []).forEach((play, i) => {
+      sounds.push({ id: `${clip.id}@${i}`, kind: "said", data: clip.data, startTime: play.startMs - shift });
+    });
+  }
+  return sounds.length ? { sounds } : null;
+}
+
+// Which sounds to start when playback begins at the playhead, and how:
+// seconds to wait before each, and seconds into it to begin. durations
+// maps a sound's id to its length in seconds.
+function scheduleSounds(sounds, durations, playhead, speed) {
+  const rate = speed > 0 ? speed : 1;
+  const out = [];
+  for (const sound of sounds || []) {
+    const seconds = durations.get(sound.id);
+    if (!seconds || playhead >= sound.startTime + seconds * 1000) continue;
+    out.push({
+      id: sound.id,
+      delay: Math.max(0, sound.startTime - playhead) / 1000 / rate,
+      offset: Math.max(0, playhead - sound.startTime) / 1000,
+    });
+  }
+  return out;
+}
+
+// Where on the timeline a listen's reply began, when the recording says.
+function heardOnset(traceData, action) {
+  const onset = action?.result?.onsetMs;
+  return typeof onset === "number" ? onset - (traceData?.timelineStart || 0) : undefined;
+}
+
 function browserRecordingView(recording) {
   const browserEvents = recording.timeline.events;
   const contextOptions = recording.format === "vibium" ? recording.metadata.contextOptions : undefined;
@@ -146,6 +190,8 @@ function browserRecordingView(recording) {
       point: event.browser?.point,
       box: event.browser?.box,
       error: event.browser?.error,
+      // What the step returned: a listen's transcript is read from here.
+      result: event.data?.after?.result,
       startTime: event.time,
       endTime: event.endTime ?? event.time,
       duration: event.duration ?? Math.max(0, (event.endTime ?? event.time) - event.time),
@@ -229,8 +275,10 @@ function browserRecordingView(recording) {
       height: screenshots.find((screenshot) => screenshot.width && screenshot.height).height,
     },
     duration: recording.timeline.duration,
+    timelineStart: recording.timeline.startTime || 0,
     fileCount: recording.metadata.fileCount,
     eventCount: recording.metadata.eventCount,
+    audio: audioView(recording),
   };
   view.skipIdleSegments = buildSkipIdleSegments(view);
   return view;
@@ -294,6 +342,7 @@ function actionColor(apiName) {
   if (n.includes("screenshot")) return brand.sunset;
   if (elementSetAction(apiName) || n.includes("check") || n.includes("assert")) return "#22c55e";
   if (n.includes("find") || n.includes("locator") || n.includes("getby")) return brand.grape;
+  if (isSpeechAction(apiName)) return n.endsWith("say") ? brand.magenta : "#22c55e";
   if (n.includes("text")) return brand.magenta;
   return brand.orange;
 }
@@ -316,11 +365,40 @@ function isSensitiveField(selector) {
   );
 }
 
-function humanizeAction(action, mask = true) {
+// What was said or heard, short enough for one caption.
+function quote(text) {
+  const t = String(text || "").trim();
+  return `“${t.length > 140 ? t.slice(0, 138) + "…" : t}”`;
+}
+
+function isSpeechAction(apiName) {
+  return /(^|[.:])speech\.(say|listen)$/i.test(apiName || "");
+}
+
+// The caption for a say or a listen. A listen is heard partway through
+// its step: until then the caption says it is listening. onset is where on
+// the timeline the reply began, when the recording says.
+function humanizeSpeech(action, at, onset) {
+  const n = (action.apiName || "").toLowerCase();
+  const p = action.params || {};
+  if (n.endsWith("say")) {
+    if (p.text) return "Say " + quote(p.text);
+    return p.file ? "Play " + String(p.file).split(/[\\/]/).pop() : "Say";
+  }
+  const heard = action.result?.text;
+  if (action.error) return "Heard nothing";
+  if (!heard) return "Listen";
+  if (typeof at === "number" && typeof onset === "number" && at < onset) return "Listening…";
+  return "Heard " + quote(heard);
+}
+
+function humanizeAction(action, mask = true, at, onset) {
   const n = (action.apiName || "").toLowerCase();
   const p = action.params || {};
   const sel = p.selector || "";
   const short = sel.length > 28 ? sel.slice(0, 26) + "…" : sel;
+
+  if (isSpeechAction(action.apiName)) return humanizeSpeech(action, at, onset);
 
   if (n.includes("navigate") || n.includes("goto")) {
     try {
@@ -360,6 +438,7 @@ function isHumanAction(apiName) {
   const n = (apiName || "").toLowerCase();
   return (
     !!elementSetAction(apiName) ||
+    isSpeechAction(apiName) ||
     n.includes("goto") ||
     n.includes("navigate") ||
     n.includes("click") ||
@@ -860,6 +939,10 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
   const [skipIdle, setSkipIdle] = useState(getPanelDefault("skip-idle", false));
+  const [sound, setSound] = useState(getPanelDefault("sound", true));
+  const [soundsReady, setSoundsReady] = useState(0);
+  const soundRef = useRef({ ctx: null, buffers: new Map(), sources: [], anchor: null });
+  const playheadNow = useRef(0);
   const [selectedAction, setSelectedAction] = useState(null);
   const [selectedPageId, setSelectedPageId] = useState(null);
   const [selectedConsoleEvent, setSelectedConsoleEvent] = useState(null);
@@ -1206,6 +1289,84 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     playRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(playRef.current);
   }, [isPlaying, traceData, speed, loop, skipIdle]);
+
+  // ─── Sound: what was said and heard, in step with the playhead ──────────
+  playheadNow.current = playhead;
+  useEffect(() => {
+    try {
+      localStorage.setItem("record-panel-sound", sound);
+    } catch {}
+  }, [sound]);
+  // Decode the recording's audio once, when it loads.
+  useEffect(() => {
+    const state = soundRef.current;
+    state.buffers = new Map();
+    const sounds = traceData?.audio?.sounds;
+    const AC = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+    if (!sounds || !AC) return;
+    let cancelled = false;
+    (async () => {
+      state.ctx = state.ctx || new AC();
+      const decoded = new Map(); // a clip played twice is decoded once
+      for (const item of sounds) {
+        try {
+          if (!decoded.has(item.data)) {
+            const bytes = item.data.buffer.slice(item.data.byteOffset, item.data.byteOffset + item.data.byteLength);
+            decoded.set(item.data, await state.ctx.decodeAudioData(bytes));
+          }
+          if (!cancelled) state.buffers.set(item.id, decoded.get(item.data));
+        } catch {
+          // A file that does not decode is skipped; the rest still play.
+        }
+      }
+      if (!cancelled) setSoundsReady((n) => n + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [traceData]);
+  // While playing, every sound is scheduled against the playhead. A jump of
+  // the playhead (a seek, a loop, skipped idle time) starts them again from there.
+  useEffect(() => {
+    const state = soundRef.current;
+    const stop = () => {
+      for (const source of state.sources) {
+        try {
+          source.stop();
+        } catch {}
+      }
+      state.sources = [];
+      state.anchor = null;
+    };
+    if (!isPlaying || !sound || !traceData?.audio || !state.ctx || !state.buffers.size) {
+      stop();
+      return;
+    }
+    const start = (from) => {
+      stop();
+      state.ctx.resume?.();
+      const durations = new Map([...state.buffers].map(([id, buffer]) => [id, buffer.duration]));
+      const now = state.ctx.currentTime;
+      for (const item of scheduleSounds(traceData.audio.sounds, durations, from, speed)) {
+        const source = state.ctx.createBufferSource();
+        source.buffer = state.buffers.get(item.id);
+        source.playbackRate.value = speed;
+        source.connect(state.ctx.destination);
+        source.start(now + item.delay, item.offset);
+        state.sources.push(source);
+      }
+      state.anchor = { at: performance.now(), playhead: from };
+    };
+    start(playheadNow.current);
+    const watch = setInterval(() => {
+      const expected = state.anchor.playhead + (performance.now() - state.anchor.at) * speed;
+      if (Math.abs(playheadNow.current - expected) > 300) start(playheadNow.current);
+    }, 200);
+    return () => {
+      clearInterval(watch);
+      stop();
+    };
+  }, [isPlaying, sound, speed, traceData, soundsReady]);
 
   // ─── Auto-scroll timeline to keep playhead visible ─────────────────────
   useEffect(() => {
@@ -2046,6 +2207,29 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             >
               {mobile ? "Skip" : "Skip idle"}
             </button>
+            {traceData?.audio && (
+              <button
+                onClick={() => setSound((on) => !on)}
+                title={sound ? "Sound is on: what was said and heard plays with the recording" : "Sound is off"}
+                aria-label="Sound"
+                aria-pressed={sound}
+                style={{
+                  background: sound ? V.orange + "18" : "none",
+                  border: sound ? `1px solid ${V.orange}40` : "1px solid transparent",
+                  color: sound ? V.orange : V.textDim,
+                  cursor: "pointer",
+                  padding: mobile ? "3px 6px" : "3px 8px",
+                  borderRadius: 6,
+                  fontSize: mobile ? 11 : 13,
+                  fontWeight: 700,
+                  outline: "none",
+                  whiteSpace: "nowrap",
+                  lineHeight: 1.2,
+                }}
+              >
+                Sound
+              </button>
+            )}
           </div>
 
           <div
@@ -2471,10 +2655,12 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     fontSize: 14,
                     fontWeight: 700,
                     color: actionColor(currentAction.apiName),
-                    whiteSpace: "nowrap",
+                    // A sentence that was said or heard may wrap; a command stays on one line.
+                    whiteSpace: isSpeechAction(currentAction.apiName) ? "normal" : "nowrap",
+                    textAlign: "center",
                   }}
                 >
-                  {humanizeAction(currentAction)}
+                  {humanizeAction(currentAction, true, playhead, heardOnset(traceData, currentAction))}
                 </span>
               </div>
             )}
@@ -4268,6 +4454,8 @@ export const __recordStudioInternals = {
   buildSkipIdleSegments,
   humanizeAction,
   isHumanAction,
+  audioView,
+  scheduleSounds,
   finiteTimelineTimes,
   normalizeActionCoords,
   browserRecordingView,
