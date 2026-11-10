@@ -856,6 +856,9 @@ const PlayheadVideo = ({ src, seconds, playing, speed, elRef, onSize, onBroken }
       ref={(el) => {
         ref.current = el;
         if (elRef) elRef.current = el;
+        // A video with sound keeps time by its sound, muted or not, and
+        // holding the sound's pitch makes a change of rate slow to take.
+        if (el) el.preservesPitch = false;
       }}
       src={src}
       muted

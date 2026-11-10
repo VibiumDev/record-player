@@ -158,6 +158,8 @@ describe("the studio's preview", () => {
     });
     expect(video.getAttribute("src")).toBe("blob:recording-video");
     expect(video.muted).toBe(true);
+    // The video's own sound is never heard, so its pitch need not be kept.
+    expect((video as HTMLVideoElement & { preservesPitch?: boolean }).preservesPitch).toBe(false);
     expect(video.style.display).toBe("block");
     expect(screen.queryByAltText("trace screenshot")).not.toBeInTheDocument();
 
