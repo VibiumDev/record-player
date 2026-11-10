@@ -9,6 +9,8 @@ A web-based player for Vibium record ZIPs, Playwright `trace.zip` archives, and 
 - **Drag & Drop** — Open Vibium record ZIPs, Playwright `trace.zip` archives, or Twee recordings by dropping them onto the player
 - **Action Timeline** — Step through recorded actions and Playwright test steps with timing info
 - **Screenshot Filmstrip** — Scrub through screencast frames captured during the recording
+- **Video** — Play a Vibium recording's video in place of its screenshots, in step with the timeline
+- **Sound and Captions** — Hear what a Vibium recording said and heard, with the words as captions
 - **Console Logs** — View browser console output tied to the recording timeline
 - **Network Inspector** — Browse recorded network activity with method, status, URL, and size
 - **Context Info** — See browser, viewport, and other recorded metadata

@@ -156,11 +156,37 @@ export interface RecordingAudio {
   transcripts: RecordingAudioTranscript[];
 }
 
+/**
+ * A video of a Vibium recording (video/index.json, version 1): a page, or
+ * the screen of a device, as one file.
+ */
+export interface RecordingVideo {
+  file: string;
+  /** What was filmed: a browsing context, or "screen" for a device. */
+  context?: string;
+  mimeType: string;
+  /**
+   * When the video starts, in milliseconds since the recording started.
+   * Negative when filming began first. Subtract `timeline.startTime` to
+   * place it on the normalized timeline.
+   */
+  offsetMs: number;
+  durationMs?: number;
+  width?: number;
+  height?: number;
+  /** Why the video ended before the recording did, when it did. */
+  error?: string;
+  /** The file's bytes. Absent when the archive names a file it does not hold. */
+  data?: Uint8Array;
+}
+
 export interface VibiumRecording extends RecordingBase<TimelineModel> {
   format: "vibium";
   presentation: ScreenshotPresentation;
   /** Present when the recording carries audio. */
   audio?: RecordingAudio;
+  /** Present when the recording carries video. */
+  videos?: RecordingVideo[];
   metadata: RecordingMetadata & {
     fileCount: number;
     eventCount: number;
@@ -1359,6 +1385,46 @@ async function readAudio(zipFiles: Record<string, ZipFile>): Promise<RecordingAu
   return { tracks, clips, transcripts };
 }
 
+const VIDEO_MANIFEST = "video/index.json";
+
+/**
+ * Reads the videos a recording carries. As with audio, an archive without a
+ * manifest, or with a version this reader does not know, has none.
+ */
+async function readVideos(zipFiles: Record<string, ZipFile>): Promise<RecordingVideo[] | undefined> {
+  const entry = zipFiles[VIDEO_MANIFEST];
+  if (!entry || entry.dir) return undefined;
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = asRecord(JSON.parse(await entry.async("string")));
+  } catch {
+    return undefined;
+  }
+  if (manifest.version !== 1 || !Array.isArray(manifest.videos)) return undefined;
+  const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+  const str = (value: unknown) => (typeof value === "string" && value ? value : undefined);
+  const videos: RecordingVideo[] = [];
+  for (const item of manifest.videos.map(asRecord)) {
+    // A video left on a remote host has no file here.
+    const file = str(item.file);
+    if (!file) continue;
+    // Only files under video/ are read: a manifest cannot point elsewhere.
+    const held = file.startsWith("video/") && zipFiles[file] && !zipFiles[file].dir;
+    videos.push({
+      file,
+      context: str(item.context),
+      mimeType: str(item.mimeType) || (file.endsWith(".mp4") ? "video/mp4" : "video/webm"),
+      offsetMs: num(item.offsetMs) ?? 0,
+      durationMs: num(item.durationMs),
+      width: num(item.width),
+      height: num(item.height),
+      error: str(item.error),
+      data: held ? await zipFiles[file].async("uint8array") : undefined,
+    });
+  }
+  return videos.length ? videos : undefined;
+}
+
 function buildTimeline(events: RecordingEvent[], screenshots: ScreenshotIndex[]): TimelineModel {
   const times = [
     ...events.flatMap((event) => [event.time, event.endTime]),
@@ -1443,12 +1509,14 @@ async function parseVibiumRecording(
   const screenshots = extractScreenshotRefs(traceEvents, resources);
   const contextOptions = traceEvents.map(asRecord).find((event) => event.type === "context-options");
   const audio = await readAudio(zipFiles);
+  const videos = await readVideos(zipFiles);
 
   return {
     version: 1,
     format: "vibium",
     presentation: { kind: "screenshot" },
     ...(audio ? { audio } : {}),
+    ...(videos ? { videos } : {}),
     source: options.source,
     files,
     metadata: {
