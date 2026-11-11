@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import { parseRecording } from "../packages/player-core";
 import { RecordPlayer } from "../packages/player-react";
-import { ScissorsLineDashed, Volume2, VolumeX, Ellipsis, Repeat, Flashlight, Gauge, Rows3, Columns2, Sun, Moon, LogOut } from "lucide-react";
+import { ScissorsLineDashed, Volume2, VolumeX, Ellipsis, Repeat, Flashlight, Gauge, Rows3, Columns2, Sun, Moon, LogOut, Clock } from "lucide-react";
 
 /* Browser recording studio — archive decoding is provided by player-core. */
 
@@ -2204,11 +2204,14 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       : "Sound is off";
 
   // Options leave the toolbar in this order as it narrows (first = first to go).
-  // Eject is last: it is the way out, so it stays visible longest.
-  const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed", "eject"];
+  // Eject is near-last (it is the way out); the time readout is last — only an
+  // extremely narrow toolbar pushes it into the menu.
+  const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed", "eject", "time"];
   const allowedCtl = (k) => {
     // Eject is the way out of a recording, not an option — never gated by `controls`.
     if (k === "eject") return !hideGlobalChrome;
+    // The time readout is core, not an option — never gated by `controls`.
+    if (k === "time") return true;
     // Embedded players don't own the page theme, so the dark/light switch is hidden too.
     if (k === "theme") return !hideGlobalChrome;
     if (Array.isArray(controls) && !controls.includes(k)) return false;
@@ -2216,8 +2219,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         return true;
   };
   const allowedList = OVERFLOW_ORDER.filter(allowedCtl);
-  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108, eject: mobile ? 40 : 92 };
-  const baseW = (mobile ? 260 : 420) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + 60;
+  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108, eject: mobile ? 40 : 92, time: mobile ? 95 : 180 };
+  const baseW = (mobile ? 165 : 240) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + 60;
   let needW = baseW + allowedList.reduce((sum, k) => sum + CTL_W[k], 0) + 24;
   const hiddenCtl = new Set();
   for (const k of allowedList) {
@@ -2485,6 +2488,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             )}
           </div>
 
+          {showCtl("time") && (
+            <>
           <div
             style={{
               fontVariantNumeric: "tabular-nums",
@@ -2502,6 +2507,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             {fmt(playhead)}
           </div>
           {!mobile && <span style={{ color: V.textDim, fontSize: 14 }}>/ {fmt(D)}</span>}
+            </>
+          )}
 
           {showCtl("speed") && (
             <div
@@ -2640,6 +2647,15 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                         </div>
                       );
                      }
+                    if (k === "time") {
+                      return (
+                        <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", color: V.orange }}>
+                          <Clock size={15} />
+                          <span style={{ flex: 1 }}>Time</span>
+                          <span style={{ fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{fmt(playhead)}{!mobile ? ` / ${fmt(D)}` : ""}</span>
+                        </div>
+                      );
+                    }
                     if (k === "eject") {
                       return (
                         <button
