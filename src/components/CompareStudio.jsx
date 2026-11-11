@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import RecordStudio from "./RecordStudio";
-import { ScissorsLineDashed } from "lucide-react";
+import { ScissorsLineDashed, Repeat, Flashlight, Sun, Moon, LogOut } from "lucide-react";
 
 const brand = {
   orange: "#f97316",
@@ -167,8 +167,9 @@ export default function CompareStudio() {
             fontSize: 15,
             fontFamily: "inherit",
           }}
+          aria-label={dark ? "Light theme" : "Dark theme"}
         >
-          {dark ? "☀︎" : "☾"}
+          {dark ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
         </button>
 
         <a
@@ -340,7 +341,7 @@ export default function CompareStudio() {
               height: 35,
             }}
           >
-        ⟲
+            <Repeat size={17} strokeWidth={2} />
           </button>
           <button
             onClick={toggleSkipIdle}
@@ -379,7 +380,7 @@ export default function CompareStudio() {
               outline: "none",
             }}
           >
-            🔦
+            <Flashlight size={17} strokeWidth={2} />
           </button>
         </div>
 
@@ -458,9 +459,12 @@ export default function CompareStudio() {
             borderRadius: 4,
             fontSize: 12,
             fontFamily: "inherit",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
           }}
         >
-          ⏏ Reset
+          <LogOut size={14} strokeWidth={2} /> Reset
         </button>
         <button
           onClick={() => setDark(!dark)}
@@ -474,8 +478,9 @@ export default function CompareStudio() {
             fontSize: 14,
             fontFamily: "inherit",
           }}
+          aria-label={dark ? "Light theme" : "Dark theme"}
         >
-          {dark ? "☀︎" : "☾"}
+          {dark ? <Sun size={14} strokeWidth={2} /> : <Moon size={14} strokeWidth={2} />}
         </button>
       </div>
 
