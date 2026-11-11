@@ -2679,7 +2679,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               )}
             </div>
           )}
-          {!hideGlobalChrome && (
+          {showCtl("eject") && (
             <button
               onClick={() => {
                 setTraceData(null);
