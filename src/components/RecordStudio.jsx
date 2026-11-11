@@ -2430,7 +2430,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     height: 38,
                   }}
                 >
-                  ⟲
+                  <Repeat size={18} strokeWidth={2} />
                 </button>
               </>
             )}
@@ -2558,7 +2558,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               outline: "none",
             }}
           >
-            🔦
+            <Flashlight size={18} strokeWidth={2} />
           </button>}
           {showCtl("layout") && (
             <button
@@ -2578,7 +2578,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 outline: "none",
               }}
             >
-              {layoutMode === "stacked" ? "▤" : "▥"}
+              {layoutMode === "stacked" ? <Rows3 size={18} strokeWidth={2} /> : <Columns2 size={18} strokeWidth={2} />}
             </button>
           )}
           {menuCtl.length > 0 && (
@@ -2696,9 +2696,14 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 borderRadius: 4,
                 fontSize: mobile ? 12 : 14,
                 fontFamily: "inherit",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
               }}
+              aria-label="Eject"
             >
-              {mobile ? "⏏" : "⏏ Eject"}
+              <LogOut size={mobile ? 15 : 16} strokeWidth={2} />
+              {!mobile && "Eject"}
             </button>
           )}
           {showCtl("theme") && (
@@ -2716,7 +2721,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 fontFamily: "inherit",
               }}
             >
-              {dark ? "☀︎" : "☾"}
+              {dark ? <Sun size={18} strokeWidth={2} /> : <Moon size={18} strokeWidth={2} />}
             </button>
           )}
           {/* Collapse toolbar chevron */}

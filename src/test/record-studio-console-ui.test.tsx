@@ -305,7 +305,7 @@ describe("RecordStudio console UI", () => {
     render(<RecordStudio initialFile={await vibiumFile(traceLines)} />);
 
     expect(await screen.findByRole("button", { name: "More options" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /⏏ Eject/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Eject" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "More options" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Eject" }));
