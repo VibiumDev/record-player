@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Open
-- Cursor trail is background-aware: darker/denser on light screenshots, lighter on dark ones (highlighter look, not a pen line).
+- No path line: show a blueish/purple outline of the cursor's destination (old desktop animation style), background-aware so it reads on light and dark screenshots.
 
 ## Done
 - Eject in the wide toolbar is icon-only (no "Eject" word); the name stays in its tooltip and accessible label.

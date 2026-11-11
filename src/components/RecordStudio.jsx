@@ -1097,12 +1097,12 @@ const PlayheadVideo = ({ src, seconds, playing, speed, elRef, onSize, onBroken }
 
 // How long the cursor takes to glide along a pointer action's path when stepping.
 const POINTER_GLIDE_MS = 600;
-const POINTER_TRAIL_FADE_MS = 1200;
-// Highlighter-pen look: a wide, soft, translucent band rather than a pen line.
-const POINTER_TRAIL_W = 14;
-// Screenshot luminance thresholds (0..1) that decide how the band is inked.
-const POINTER_TRAIL_LIGHT_BG = 0.55;
-const POINTER_TRAIL_DARK_BG = 0.35;
+// Destination marker: a blue-violet outline of where the pointer is heading
+// (old desktop "locate cursor" style), not a drawing of the path it took.
+const POINTER_DEST_SIZE = 68;
+// Screenshot luminance thresholds (0..1) that decide how the outline is inked.
+const POINTER_DEST_LIGHT_BG = 0.55;
+const POINTER_DEST_DARK_BG = 0.35;
 
 // Average brightness of the screenshot directly under the pointer's path.
 const trailLumCache = { key: "", data: null, w: 0, h: 0 };
@@ -1138,12 +1138,12 @@ const screenshotLuminance = (imgEl, pts, imgLeft, imgTop, iW, iH) => {
   }
 };
 
-// Light screens get a denser, darker stroke; dark screens get a lighter one.
-const trailLook = (lum, color) => {
-  if (lum == null) return { stroke: color, opacity: 0.26, blend: "normal" };
-  if (lum > POINTER_TRAIL_LIGHT_BG) return { stroke: "#ea580c", opacity: 0.45, blend: "multiply" };
-  if (lum < POINTER_TRAIL_DARK_BG) return { stroke: "#fdba74", opacity: 0.5, blend: "screen" };
-  return { stroke: color, opacity: 0.3, blend: "normal" };
+// Light screens get a deeper indigo outline, dark screens a paler one.
+const outlineLook = (lum) => {
+  if (lum == null) return { stroke: "#818cf8", glow: "rgba(129,140,248,0.35)" };
+  if (lum > POINTER_DEST_LIGHT_BG) return { stroke: "#4f46e5", glow: "rgba(79,70,229,0.32)" };
+  if (lum < POINTER_DEST_DARK_BG) return { stroke: "#a5b4fc", glow: "rgba(165,180,252,0.42)" };
+  return { stroke: "#818cf8", glow: "rgba(129,140,248,0.35)" };
 };
 
 // Persistent cursor component — always visible, animates between positions.
