@@ -1157,6 +1157,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   // resize) re-runs the effect with the same action, and must not replay them.
   const seenRef = useRef(new Set());
   const timersRef = useRef([]);
+  const [pos, setPos] = useState(null); // drawn pointer; glides from the last spot to this step's point
 
   useEffect(() => {
     if (!imgEl || !containerEl || !action?.point) { setDest(null); return; }
@@ -1174,6 +1175,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     };
     const end = map(action.point);
     if (!end) return;
+    setPos(end);
     const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
     seenRef.current.add(key);
     timersRef.current.forEach(clearTimeout); timersRef.current = [];
@@ -1199,7 +1201,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
 
   useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
 
-  if (!dest && ripples.length === 0) return null;
+  if (!dest && ripples.length === 0 && !pos) return null;
   return (
     <>
       <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
@@ -1221,6 +1223,14 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
           </div>
         );
       })()}
+      {pos && (
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"
+          style={{ position: "absolute", left: pos.x, top: pos.y, pointerEvents: "none", zIndex: 7,
+            transition: glide ? `left ${POINTER_GLIDE_MS}ms cubic-bezier(0.4,0,0.2,1), top ${POINTER_GLIDE_MS}ms cubic-bezier(0.4,0,0.2,1)` : "none",
+            filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))" }}>
+          <path d="M3 2l7 19 2.6-7.4L20 11z" fill="#fff" stroke="#111" strokeWidth="1.5" strokeLinejoin="round" />
+        </svg>
+      )}
       {ripples.map((r) => (
         <div
           key={r.id}
@@ -1255,6 +1265,16 @@ function keepRowInView(el) {
       el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }
+}
+
+// A click ripple belongs to the moment a step is reached; pausing/unpausing
+// re-renders the overlay and must not replay it.
+const rippleSeen = new Map();
+function rippleFresh(action) {
+  const key = action?.callId ?? `${action?.point?.x},${action?.point?.y},${action?.startTime}`;
+  const now = Date.now();
+  if (!rippleSeen.has(key)) rippleSeen.set(key, now);
+  return now - rippleSeen.get(key) < 450;
 }
 
 const ActionOverlay = forwardRef(function ActionOverlay(
@@ -1313,7 +1333,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
         />
       )}
       {/* Click ripple */}
-      {isClick && (
+      {isClick && rippleFresh(action) && (
         <div
           key={action.callId}
           style={{
