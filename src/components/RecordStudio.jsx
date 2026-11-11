@@ -1147,11 +1147,12 @@ const outlineLook = (lum) => {
 };
 
 // Persistent cursor component — always visible, animates between positions.
-// For pointer actions it glides along the recorded path, leaving a fading
-// trail, with a ripple where the pointer clicked.
+// For pointer actions it glides along the recorded path toward an outlined
+// destination, with a ripple where the pointer clicked.
 const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide = true, color = "#f97316" }) => {
   const [pos, setPos] = useState({ x: 0, y: 0, visible: false });
   const [trail, setTrail] = useState(null); // { points, progress, fading, clicks }
+  const [dest, setDest] = useState(null); // { x, y, key, lum } — where the pointer is heading
   const lastCallRef = useRef(null);
   const rafRef = useRef(0);
   const animatingRef = useRef(false);
@@ -1180,6 +1181,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
       const key = action?.callId ?? action?.id;
       const fresh = key !== lastCallRef.current;
       lastCallRef.current = key;
+      if (fresh) setDest({ x: m.end.x, y: m.end.y, key, lum: m.lum });
       if (fresh && glide && m.path.length > 1) {
         cancelAnimationFrame(rafRef.current);
         const t0 = performance.now();
@@ -1202,6 +1204,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
         return;
       }
       if (fresh) setTrail(null);
+      setDest({ x: m.end.x, y: m.end.y, key, lum: m.lum });
       setPos({ x: m.end.x, y: m.end.y, visible: true, instant: false });
     };
     recalc();
@@ -1214,28 +1217,25 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   if (!pos.visible) return null;
-  const shown = trail ? trail.points.slice(0, Math.floor(trail.upTo) + 1) : [];
-  if (trail && trail.upTo % 1 && shown.length) shown.push({ x: pos.x, y: pos.y });
   return (
     <>
-      <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }`}</style>
-      {trail && shown.length > 1 && (() => {
-        const look = trailLook(trail.lum, color);
-        const pts = shown.map((pt) => `${pt.x},${pt.y}`).join(" ");
+      <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
+        @keyframes ov-dest { from { opacity: 0; transform: translate(-50%,-50%) scale(1.25); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+        @keyframes ov-dest-ping { from { transform: scale(0.8); opacity: 0.75; } to { transform: scale(1.7); opacity: 0; } }`}</style>
+      {dest && glide && (() => {
+        const look = outlineLook(dest.lum);
         return (
-          <svg
-            key={trail.key}
+          <div
+            key={`dest-${dest.key}`}
             style={{
-              position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 6,
-              opacity: trail.fading ? 0 : 1, transition: trail.fading ? `opacity ${POINTER_TRAIL_FADE_MS}ms ease-out` : "none",
-              mixBlendMode: look.blend,
+              position: "absolute", left: dest.x, top: dest.y, width: POINTER_DEST_SIZE, height: POINTER_DEST_SIZE,
+              transform: "translate(-50%,-50%)", borderRadius: 16, border: `2px solid ${look.stroke}`,
+              boxShadow: `0 0 18px ${look.glow}, inset 0 0 14px ${look.glow}`,
+              pointerEvents: "none", zIndex: 6, animation: "ov-dest 0.28s ease-out",
             }}
           >
-            <polyline points={pts} fill="none" stroke={look.stroke} strokeOpacity={look.opacity}
-              strokeWidth={POINTER_TRAIL_W} strokeLinecap="round" strokeLinejoin="round" />
-            <polyline points={pts} fill="none" stroke={look.stroke} strokeOpacity={look.opacity}
-              strokeWidth={POINTER_TRAIL_W * 0.5} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+            <div style={{ position: "absolute", inset: -2, borderRadius: 16, border: `2px solid ${look.stroke}`, pointerEvents: "none", animation: "ov-dest-ping 0.9s ease-out forwards" }} />
+          </div>
         );
       })()}
       {trail?.clicks.map((pt, i) => (
