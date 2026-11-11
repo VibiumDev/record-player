@@ -2649,7 +2649,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       >
                         {row.icon}
                         <span style={{ flex: 1 }}>{row.text}</span>
-                        {k !== "theme" && <span style={{ fontSize: 11, opacity: 0.8 }}>{row.on ? "On" : "Off"}</span>}
+                        {k !== "theme" && <span style={{ fontSize: 11, opacity: 0.8 }}>{k === "sound" && !hasSound ? "no audio" : row.on ? "On" : "Off"}</span>}
                       </button>
                     );
                   })}
