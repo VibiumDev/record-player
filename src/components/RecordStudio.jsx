@@ -1165,8 +1165,10 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   const [pos, setPos] = useState({ x: 0, y: 0, visible: false });
   const [trail, setTrail] = useState(null); // { points, progress, fading, clicks }
   const [dest, setDest] = useState(null); // { x, y, key, lum } — where the pointer is heading
+  const [destShown, setDestShown] = useState(false); // destination ring fades away shortly after appearing
   const lastCallRef = useRef(null);
   const rafRef = useRef(0);
+  const destTimerRef = useRef(0);
   const animatingRef = useRef(false);
 
   useEffect(() => {
@@ -1193,7 +1195,12 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
       const key = action?.callId ?? action?.id;
       const fresh = key !== lastCallRef.current;
       lastCallRef.current = key;
-      if (fresh) setDest({ x: m.end.x, y: m.end.y, key, lum: m.lum });
+      if (fresh) {
+        setDest({ x: m.end.x, y: m.end.y, key, lum: m.lum });
+        setDestShown(true);
+        clearTimeout(destTimerRef.current);
+        destTimerRef.current = setTimeout(() => setDestShown(false), 1500);
+      }
       if (fresh && glide && m.path.length > 1) {
         cancelAnimationFrame(rafRef.current);
         const t0 = performance.now();
