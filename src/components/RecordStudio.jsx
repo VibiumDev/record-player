@@ -4275,8 +4275,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           marginBottom: 4,
                         }}
                       >
-                        <div style={{ fontSize: 14, fontWeight: 600, color: actionColor(selectedAction?.apiName) }}>
-                          {selectedAction?.apiName || ''}
+                        <div style={{ fontSize: 14, fontWeight: 600, color: actionColor(detailAction?.apiName) }}>
+                          {detailAction?.apiName || ''}
                         </div>
                         <span
                           onClick={() => setMaskSensitive((m) => !m)}
@@ -4292,7 +4292,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           {maskSensitive ? "🔒 Masked" : "🔓 Visible"}
                         </span>
                       </div>
-                      {selectedAction?.error && (
+                      {detailAction?.error && (
                         <div
                           style={{
                             fontSize: 13,
@@ -4303,9 +4303,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                             marginBottom: 4,
                           }}
                         >
-                          {typeof selectedAction.error === "string"
-                            ? selectedAction.error
-                            : selectedAction.error?.message || JSON.stringify(selectedAction.error)}
+                          {typeof detailAction.error === "string"
+                            ? detailAction.error
+                            : detailAction.error?.message || JSON.stringify(detailAction.error)}
                         </div>
                       )}
                       <pre
@@ -4318,7 +4318,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                         }}
                       >
                         {(() => {
-                          const ps = selectedAction?.params;
+                          const ps = detailAction?.params;
                           if (!maskSensitive || !isSensitiveField(ps?.selector)) return JSON.stringify(ps, null, 2);
                           const masked = { ...ps };
                           if (masked.value) masked.value = "••••••";
