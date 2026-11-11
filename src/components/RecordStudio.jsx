@@ -3856,7 +3856,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600, color: isActive ? c : V.textAction }}>
-                              {a.apiName || "action"}{a.pageId ? ` · ${a.pageId}` : ""}
+                              {a.apiName || "action"}
                             </div>
                             <div
                               style={{
@@ -4035,7 +4035,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                             wordBreak: "break-all",
                           }}
                         >
-                          {c.text}{c.pageId ? ` · ${c.pageId}` : ""}
+                          {c.text}
                         </div>
                         <span
                           style={{ fontSize: 12, color: V.textDim, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}
