@@ -2386,14 +2386,14 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 cursor: "pointer",
                 padding: mobile ? "3px 6px" : "3px 8px",
                 borderRadius: 6,
-                fontSize: mobile ? 11 : 13,
+                fontSize: mobile ? 16 : 20,
                 fontWeight: 700,
                 outline: "none",
                 whiteSpace: "nowrap",
                 lineHeight: 1.2,
               }}
             >
-              {mobile ? "Skip" : "Skip idle"}
+              ⏩
             </button>
             {traceData?.audio && (
               <button

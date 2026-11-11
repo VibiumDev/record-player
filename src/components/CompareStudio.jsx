@@ -350,16 +350,16 @@ export default function CompareStudio() {
               border: skipIdle ? `1px solid ${V.orange}40` : "1px solid transparent",
               color: skipIdle ? V.orange : V.textDim,
               cursor: "pointer",
-              padding: "3px 8px",
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 700,
-              outline: "none",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Skip idle
-          </button>
+            padding: "3px 8px",
+            borderRadius: 6,
+            fontSize: 18,
+            fontWeight: 700,
+            outline: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ⏩
+        </button>
           <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
           <button
             onClick={() => setOverlayEnabled((v) => !v)}
