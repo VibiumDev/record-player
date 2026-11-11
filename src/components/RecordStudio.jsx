@@ -396,7 +396,14 @@ const HID_MAX = 32767;
 // over its step. A click entry marks the point the pointer was at.
 function attachPointerPaths(actions, frame) {
   for (const a of actions || []) {
-    if (!isPointerAction(a.apiName)) continue;
+    if (!isPointerAction(a.apiName)) {
+      // A tap has no path to follow, but its destination is exact.
+      if (!a.point && isTapAction(a.apiName)) {
+        const x = Number(a.params?.x), y = Number(a.params?.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) a.point = { x, y };
+      }
+      continue;
+    }
     const inputs = Array.isArray(a.params?.inputs) ? a.params.inputs : [];
     const raw = [];
     for (const input of inputs) {
@@ -619,6 +626,11 @@ function quote(text) {
 // Low-level pointer input (Vibium hid.mouse_*): moves, presses, releases.
 function isPointerAction(apiName) {
   return /(^|[.:])((hid\.)?mouse[._]|pointer\.)(move|down|up|press|release|click|wheel)(\s*×\s*\d+)?$/i.test(apiName || "");
+}
+
+// A tap states its spot outright: its x/y params are where the finger landed.
+function isTapAction(apiName) {
+  return /(^|[.:])(touch[._](tap|press|release|click)|tap)$/i.test(apiName || "");
 }
 
 function humanizePointer(action) {
@@ -1097,14 +1109,62 @@ const PlayheadVideo = ({ src, seconds, playing, speed, elRef, onSize, onBroken }
 
 // How long the cursor takes to glide along a pointer action's path when stepping.
 const POINTER_GLIDE_MS = 600;
-const POINTER_TRAIL_FADE_MS = 1200;
+// Destination marker: a blue-violet outline of where the pointer is heading
+// (old desktop "locate cursor" style), not a drawing of the path it took.
+const POINTER_DEST_SIZE = 68;
+// Screenshot luminance thresholds (0..1) that decide how the outline is inked.
+const POINTER_DEST_LIGHT_BG = 0.55;
+const POINTER_DEST_DARK_BG = 0.35;
+
+// Average brightness of the screenshot directly under the pointer's path.
+const trailLumCache = { key: "", data: null, w: 0, h: 0 };
+const screenshotLuminance = (imgEl, pts, imgLeft, imgTop, iW, iH) => {
+  try {
+    const src = imgEl.currentSrc || imgEl.src;
+    if (!src || !pts.length) return null;
+    const w = 48, h = 48;
+    if (trailLumCache.key !== src || !trailLumCache.data) {
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      const cx = c.getContext("2d", { willReadFrequently: true });
+      if (!cx) return null;
+      cx.drawImage(imgEl, 0, 0, w, h);
+      trailLumCache.key = src;
+      trailLumCache.data = cx.getImageData(0, 0, w, h).data; // throws if the canvas is tainted
+      trailLumCache.w = w; trailLumCache.h = h;
+    }
+    const { data } = trailLumCache;
+    let sum = 0, n = 0;
+    for (const pt of pts) {
+      const u = Math.min(1, Math.max(0, (pt.x - imgLeft) / iW));
+      const v = Math.min(1, Math.max(0, (pt.y - imgTop) / iH));
+      const px = Math.min(w - 1, Math.floor(u * w));
+      const py = Math.min(h - 1, Math.floor(v * h));
+      const o = (py * w + px) * 4;
+      sum += (0.2126 * data[o] + 0.7152 * data[o + 1] + 0.0722 * data[o + 2]) / 255;
+      n++;
+    }
+    return n ? sum / n : null;
+  } catch {
+    return null;
+  }
+};
+
+// Light screens get a deeper indigo outline, dark screens a paler one.
+const outlineLook = (lum) => {
+  if (lum == null) return { stroke: "#818cf8", glow: "rgba(129,140,248,0.35)" };
+  if (lum > POINTER_DEST_LIGHT_BG) return { stroke: "#4f46e5", glow: "rgba(79,70,229,0.32)" };
+  if (lum < POINTER_DEST_DARK_BG) return { stroke: "#a5b4fc", glow: "rgba(165,180,252,0.42)" };
+  return { stroke: "#818cf8", glow: "rgba(129,140,248,0.35)" };
+};
 
 // Persistent cursor component — always visible, animates between positions.
-// For pointer actions it glides along the recorded path, leaving a fading
-// trail, with a ripple where the pointer clicked.
+// For pointer actions it glides along the recorded path toward an outlined
+// destination, with a ripple where the pointer clicked.
 const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide = true, color = "#f97316" }) => {
   const [pos, setPos] = useState({ x: 0, y: 0, visible: false });
   const [trail, setTrail] = useState(null); // { points, progress, fading, clicks }
+  const [dest, setDest] = useState(null); // { x, y, key, lum } — where the pointer is heading
   const lastCallRef = useRef(null);
   const rafRef = useRef(0);
   const animatingRef = useRef(false);
@@ -1125,7 +1185,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
       const end = map(action.point);
       if (!end) return null;
       const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
-      return { end, path };
+      return { end, path, lum: screenshotLuminance(imgEl, [...path, end], imgLeft, imgTop, iRect.width, iRect.height) };
     };
     const recalc = () => {
       const m = mapPoints();
@@ -1133,6 +1193,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
       const key = action?.callId ?? action?.id;
       const fresh = key !== lastCallRef.current;
       lastCallRef.current = key;
+      if (fresh) setDest({ x: m.end.x, y: m.end.y, key, lum: m.lum });
       if (fresh && glide && m.path.length > 1) {
         cancelAnimationFrame(rafRef.current);
         const t0 = performance.now();
@@ -1147,7 +1208,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
           const a = m.path[i], b = m.path[i + 1];
           for (let j = 0; j <= Math.round(f); j++) if (m.path[j].click && !clicks.includes(j)) clicks.push(j);
           setPos({ x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r, visible: true, instant: true });
-          setTrail({ points: m.path, upTo: f, fading: false, clicks: clicks.map((j) => m.path[j]), key });
+          setTrail({ points: m.path, upTo: f, fading: false, clicks: clicks.map((j) => m.path[j]), key, lum: m.lum });
           if (k < 1) rafRef.current = requestAnimationFrame(tick);
           else { animatingRef.current = false; setTrail((tr) => tr && { ...tr, fading: true }); }
         };
@@ -1155,6 +1216,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
         return;
       }
       if (fresh) setTrail(null);
+      setDest({ x: m.end.x, y: m.end.y, key, lum: m.lum });
       setPos({ x: m.end.x, y: m.end.y, visible: true, instant: false });
     };
     recalc();
@@ -1166,24 +1228,33 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
+  // A step with nowhere to point (a wait, a listen) shows no destination.
+  useEffect(() => {
+    if (!action?.point) setDest(null);
+  }, [action]);
+
   if (!pos.visible) return null;
-  const shown = trail ? trail.points.slice(0, Math.floor(trail.upTo) + 1) : [];
-  if (trail && trail.upTo % 1 && shown.length) shown.push({ x: pos.x, y: pos.y });
   return (
     <>
-      <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }`}</style>
-      {trail && shown.length > 1 && (
-        <svg
-          key={trail.key}
-          style={{
-            position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 6,
-            opacity: trail.fading ? 0 : 1, transition: trail.fading ? `opacity ${POINTER_TRAIL_FADE_MS}ms ease-out` : "none",
-          }}
-        >
-          <polyline points={shown.map((pt) => `${pt.x},${pt.y}`).join(" ")} fill="none" stroke={color} strokeOpacity={0.8}
-            strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
+      <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
+        @keyframes ov-dest { from { opacity: 0; transform: translate(-50%,-50%) scale(1.25); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+        @keyframes ov-dest-ping { from { transform: scale(0.8); opacity: 0.75; } to { transform: scale(1.7); opacity: 0; } }`}</style>
+      {dest && glide && !action?.box && (() => {
+        const look = outlineLook(dest.lum);
+        return (
+          <div
+            key={`dest-${dest.key}`}
+            style={{
+              position: "absolute", left: dest.x, top: dest.y, width: POINTER_DEST_SIZE, height: POINTER_DEST_SIZE,
+              transform: "translate(-50%,-50%)", borderRadius: "50%", border: `2px solid ${look.stroke}`,
+              boxShadow: `0 0 18px ${look.glow}, inset 0 0 14px ${look.glow}`,
+              pointerEvents: "none", zIndex: 6, animation: "ov-dest 0.28s ease-out",
+            }}
+          >
+            <div style={{ position: "absolute", inset: -2, borderRadius: "50%", border: `2px solid ${look.stroke}`, pointerEvents: "none", animation: "ov-dest-ping 0.9s ease-out forwards" }} />
+          </div>
+        );
+      })()}
       {trail?.clicks.map((pt, i) => (
         <div
           key={`${trail.key}-c${i}`}
@@ -1209,6 +1280,28 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     </>
   );
 };
+
+// Scroll a panel row into view only when it is actually out of sight. Calling
+// scrollIntoView on every render re-centers the list each frame, which reads
+// as the panel bobbing during playback.
+function keepRowInView(el) {
+  if (!el) return;
+  let sc = el.parentElement;
+  while (sc) {
+    const oy = getComputedStyle(sc).overflowY;
+    if (oy === "auto" || oy === "scroll") break;
+    sc = sc.parentElement;
+  }
+  if (!sc) return;
+  const r = el.getBoundingClientRect();
+  const b = sc.getBoundingClientRect();
+  if (r.top < b.top + 2 || r.bottom > b.bottom - 2) {
+    // jsdom and some older embeds lack scrollIntoView; skip rather than crash.
+    if (typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+}
 
 const ActionOverlay = forwardRef(function ActionOverlay(
   { action, screenshot, viewport, dpr, imgEl, containerEl, showDebug, layoutKey },
@@ -2021,6 +2114,21 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     if ((action.apiName || "").toLowerCase().includes("waitfor")) return null;
     return action;
   }, [currentAction, currentFrame, playhead, selectedAction, actionFilter]);
+
+  // The cursor follows the action the overlay is highlighting, so the element
+  // box and the cursor destination can never both appear at once.
+  const cursorAction = useMemo(() => {
+    if (overlayAction?.point) return overlayAction;
+    const actions = traceData?.actions || [];
+    // A step the user picked wins over one starting at the same instant.
+    if (selectedAction?.point && selectedAction.pageId === currentFrame?.pageId &&
+      playhead >= (selectedAction.startTime || 0) - 50 && playhead <= (selectedAction.endTime ?? selectedAction.startTime) + 50) return selectedAction;
+    let best = null;
+    for (const a of actions) {
+      if (a.point && a.pageId === currentFrame?.pageId && (a.startTime || 0) <= playhead + 50) best = a;
+    }
+    return best;
+  }, [overlayAction, currentFrame, playhead, selectedAction, traceData]);
 
   const activeContextOptions = useMemo(() => {
     if (!traceData) return undefined;
@@ -3189,17 +3297,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 {overlayEnabled && !(shownVideo && isPlaying) && (
                   <PersistentCursor
                     glide={!isPlaying}
-                    action={(() => {
-                      const actions = traceData?.actions || [];
-                      // A step the user picked wins over one starting at the same instant.
-                      if (selectedAction?.point && selectedAction.pageId === currentFrame.pageId &&
-                        playhead >= (selectedAction.startTime || 0) - 50 && playhead <= (selectedAction.endTime ?? selectedAction.startTime) + 50) return selectedAction;
-                      let best = null;
-                      for (const a of actions) {
-                        if (a.point && a.pageId === currentFrame.pageId && (a.startTime || 0) <= playhead + 50) best = a;
-                      }
-                      return best;
-                    })()}
+                    action={cursorAction}
                     screenshot={currentFrame}
                     viewport={
                       overlayAction?._snapshotMeta?.viewport ||
@@ -3227,10 +3325,6 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       onClick={() => {
                         setPlayhead(0);
                         setIsPlaying(true);
-                        if (!mobile && !compact) {
-                          setShowTimeline(true);
-                          setShowSide(true);
-                        }
                       }}
                       style={{
                         width: 80,
@@ -3589,7 +3683,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 </div>
               )}
 
-              <div style={{ flex: 1, overflowY: "auto", padding: 4, userSelect: "text" }}>
+              <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: 4, userSelect: "text" }}>
                 {/* Actions panel */}
                 {activePanel === "actions" &&
                   (() => {
@@ -3720,11 +3814,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       return (
                         <div
                           key={`a-${i}`}
-                          ref={
-                            isActive || selectedAction === a
-                              ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" })
-                              : undefined
-                          }
+                          ref={isActive || selectedAction === a ? (el) => keepRowInView(el) : undefined}
                           onClick={() => {
                             setPlayhead(a.endTime || a.startTime);
                             setSelectedAction(a);
@@ -3837,9 +3927,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     return (
                       <div
                         key={i}
-                        ref={
-                          isActive ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined
-                        }
+                        ref={isActive ? (el) => keepRowInView(el) : undefined}
                         onClick={() => setPlayhead(n.startTime)}
                         style={{
                           display: "flex",
@@ -3897,9 +3985,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     return (
                       <div
                         key={i}
-                        ref={
-                          isActive ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined
-                        }
+                        ref={isActive ? (el) => keepRowInView(el) : undefined}
                         onClick={() => {
                           setPlayhead(c.time);
                           setSelectedConsoleEvent(c);
@@ -4083,7 +4169,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               </div>
 
               {/* Action detail */}
-              {selectedAction && activePanel === "actions" && (
+              {activePanel === "actions" ? (
                 <>
                   {/* Detail divider with centered chevron */}
                   <div
@@ -4132,8 +4218,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       style={{
                         position: "absolute",
                         top: "50%",
-                        left: "50%",
-                        transform: "translate(-50%, -50%)",
+                        left: layoutMode === "stacked" ? 14 : "50%",
+                        transform: layoutMode === "stacked" ? "translateY(-50%)" : "translate(-50%, -50%)",
                         width: 28,
                         height: 16,
                         borderRadius: 4,
@@ -4160,7 +4246,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       {showDetail ? "▾" : "▴"}
                     </div>
                   </div>
-                  {showDetail && (
+                  {showDetail && selectedAction && (
                     <div
                       style={{
                         height: detailH,
@@ -4232,10 +4318,10 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     </div>
                   )}
                 </>
-              )}
+              ) : null}
 
               {/* Console detail */}
-              {selectedConsoleEvent && activePanel === "console" && (
+              {activePanel === "console" ? (
                 <>
                   <div
                     onMouseDown={(e) => {
@@ -4283,8 +4369,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       style={{
                         position: "absolute",
                         top: "50%",
-                        left: "50%",
-                        transform: "translate(-50%, -50%)",
+                        left: layoutMode === "stacked" ? 14 : "50%",
+                        transform: layoutMode === "stacked" ? "translateY(-50%)" : "translate(-50%, -50%)",
                         width: 28,
                         height: 16,
                         borderRadius: 4,
@@ -4311,7 +4397,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       {showDetail ? "▾" : "▴"}
                     </div>
                   </div>
-                  {showDetail && (
+                  {showDetail && selectedConsoleEvent && (
                     <div
                       style={{
                         height: detailH,
@@ -4366,7 +4452,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     </div>
                   )}
                 </>
-              )}
+              ) : null}
             </div>
           </>
         ) : /* Collapsed side panel — expand chevron */
