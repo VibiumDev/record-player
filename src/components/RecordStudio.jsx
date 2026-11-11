@@ -1176,9 +1176,14 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     if (!end) return;
     const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
     seenRef.current.add(key);
+    timersRef.current.forEach(clearTimeout); timersRef.current = [];
     const lum = screenshotLuminance(imgEl, [...path, end], imgLeft, imgTop, iRect.width, iRect.height);
-    setDest({ x: end.x, y: end.y, key, lum });
-    timersRef.current.push(setTimeout(() => setDest((d) => (d?.key === key ? null : d)), 1500));
+    // The screenshot/video still shows the real pointer at the start of the
+    // move, so the destination circle waits until the move would have arrived.
+    const arriveAt = path.length > 1 ? POINTER_GLIDE_MS : 0;
+    setDest(null);
+    timersRef.current.push(setTimeout(() => setDest({ x: end.x, y: end.y, key, lum }), arriveAt));
+    timersRef.current.push(setTimeout(() => setDest((d) => (d?.key === key ? null : d)), arriveAt + 1500));
     // Ripples fire at the click points, staggered as if the pointer glided there.
     path.forEach((pt, i) => {
       if (!pt.click) return;
