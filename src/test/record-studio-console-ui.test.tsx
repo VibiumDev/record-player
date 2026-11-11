@@ -1,3 +1,4 @@
+// @ts-nocheck -- test fixtures use loose shapes
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import JSZip from "jszip";

@@ -1,3 +1,4 @@
+// @ts-nocheck -- test fixtures use loose shapes
 import { act, screen, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";

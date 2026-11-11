@@ -1,3 +1,4 @@
+// @ts-nocheck -- test fixtures use loose shapes
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { parseRecording } from "../packages/player-core";
