@@ -3191,6 +3191,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     glide={!isPlaying}
                     action={(() => {
                       const actions = traceData?.actions || [];
+                      // A step the user picked wins over one starting at the same instant.
+                      if (selectedAction?.point && selectedAction.pageId === currentFrame.pageId &&
+                        playhead >= (selectedAction.startTime || 0) - 50 && playhead <= (selectedAction.endTime ?? selectedAction.startTime) + 50) return selectedAction;
                       let best = null;
                       for (const a of actions) {
                         if (a.point && a.pageId === currentFrame.pageId && (a.startTime || 0) <= playhead + 50) best = a;
