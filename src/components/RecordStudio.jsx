@@ -1150,7 +1150,7 @@ const outlineLook = (lum) => {
 // Persistent cursor component — always visible, animates between positions.
 // For pointer actions it glides along the recorded path toward an outlined
 // destination, with a ripple where the pointer clicked.
-const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide = true, color = "#f97316" }) => {
+const PersistentCursor = ({ action, pointerAction, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide = true, color = "#f97316" }) => {
   const [dest, setDest] = useState(null); // { x, y, key, lum } — where the pointer landed
   const [ripples, setRipples] = useState([]); // [{ id, x, y }] — click points along the path
   // Each step's circle/ripples play exactly once. Pause/unpause (or a panel
@@ -1175,7 +1175,6 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     };
     const end = map(action.point);
     if (!end) return;
-    setPos(end);
     if (seen) return;
     const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
     seenRef.current.add(key);
@@ -1201,6 +1200,17 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide]);
 
   useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
+
+  useEffect(() => {
+    if (!imgEl || !containerEl || !pointerAction?.point) return;
+    const { natW, natH } = naturalSize(imgEl);
+    const cRect = containerEl.getBoundingClientRect();
+    const iRect = imgEl.getBoundingClientRect();
+    if (!iRect.width || !iRect.height) return;
+    const norm = normalizeActionCoords({ action: { ...pointerAction, box: undefined }, screenshot, viewport, dpr, imgW: iRect.width, imgH: iRect.height, natW, natH });
+    if (norm) setPos({ x: iRect.left - cRect.left + norm.px, y: iRect.top - cRect.top + norm.py });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointerAction?.callId, pointerAction?.point?.x, pointerAction?.point?.y, screenshot, viewport, dpr, imgEl, containerEl, layoutKey]);
 
   if (!dest && ripples.length === 0 && !pos) return null;
   return (
@@ -2104,6 +2114,18 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     }
     return best;
   }, [overlayAction, currentFrame, playhead, selectedAction, traceData]);
+
+  // The drawn pointer lands on a step's point only once the picture shows the
+  // pointer there: the frame on screen must be from after the step ended.
+  const pointerAction = useMemo(() => {
+    const seenAt = shownVideo ? playhead : currentFrame?.time;
+    if (seenAt == null) return null;
+    let best = null;
+    for (const a of traceData?.actions || []) {
+      if (a.point && a.pageId === currentFrame?.pageId && (a.endTime ?? a.startTime ?? 0) <= seenAt + 1) best = a;
+    }
+    return best;
+  }, [currentFrame, playhead, shownVideo, traceData]);
 
   const activeContextOptions = useMemo(() => {
     if (!traceData) return undefined;
@@ -3283,6 +3305,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                   <PersistentCursor
                     glide={!isPlaying}
                     action={cursorAction}
+                    pointerAction={pointerAction}
                     screenshot={currentFrame}
                     viewport={
                       overlayAction?._snapshotMeta?.viewport ||
