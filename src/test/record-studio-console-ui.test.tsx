@@ -88,7 +88,7 @@ describe("RecordStudio console UI", () => {
     const { container } = render(<RecordStudio initialFile={recording} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Log (1)" }));
-    expect(screen.getByText("page b error · library:page-b")).toBeInTheDocument();
+    expect(screen.getByText("page b error")).toBeInTheDocument();
     expect(screen.getByLabelText("Recording page")).toHaveValue("library:page-b");
     expect(screen.queryByAltText("trace screenshot")).not.toBeInTheDocument();
     expect(container.querySelectorAll('img[src="data:image/jpeg;base64,Ag=="]')).toHaveLength(1);

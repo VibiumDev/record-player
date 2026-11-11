@@ -2153,6 +2153,16 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     setSelectedAction(currentAction);
   }, [currentAction, isPlaying]);
 
+  // The detail pane keeps showing the last step it had, so it doesn't flash
+  // blank in the gaps between actions (selectedAction clears between them so
+  // the highlight box can turn off).
+  const lastDetailAction = useRef(null);
+  if (selectedAction) lastDetailAction.current = selectedAction;
+  useEffect(() => {
+    lastDetailAction.current = null;
+  }, [traceData]);
+  const detailAction = selectedAction || lastDetailAction.current;
+
   // ─── Scroll timeline to selected action ─────────────────────────────
   useEffect(() => {
     if (!selectedAction || !scrollRef.current || !traceData) return;
@@ -3846,7 +3856,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600, color: isActive ? c : V.textAction }}>
-                              {a.apiName || "action"}{a.pageId ? ` · ${a.pageId}` : ""}
+                              {a.apiName || "action"}
                             </div>
                             <div
                               style={{
@@ -4025,7 +4035,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                             wordBreak: "break-all",
                           }}
                         >
-                          {c.text}{c.pageId ? ` · ${c.pageId}` : ""}
+                          {c.text}
                         </div>
                         <span
                           style={{ fontSize: 12, color: V.textDim, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}
@@ -4265,8 +4275,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           marginBottom: 4,
                         }}
                       >
-                        <div style={{ fontSize: 14, fontWeight: 600, color: actionColor(selectedAction?.apiName) }}>
-                          {selectedAction?.apiName || ''}
+                        <div style={{ fontSize: 14, fontWeight: 600, color: actionColor(detailAction?.apiName) }}>
+                          {detailAction?.apiName || ''}
                         </div>
                         <span
                           onClick={() => setMaskSensitive((m) => !m)}
@@ -4282,7 +4292,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           {maskSensitive ? "🔒 Masked" : "🔓 Visible"}
                         </span>
                       </div>
-                      {selectedAction?.error && (
+                      {detailAction?.error && (
                         <div
                           style={{
                             fontSize: 13,
@@ -4293,9 +4303,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                             marginBottom: 4,
                           }}
                         >
-                          {typeof selectedAction.error === "string"
-                            ? selectedAction.error
-                            : selectedAction.error?.message || JSON.stringify(selectedAction.error)}
+                          {typeof detailAction.error === "string"
+                            ? detailAction.error
+                            : detailAction.error?.message || JSON.stringify(detailAction.error)}
                         </div>
                       )}
                       <pre
@@ -4308,7 +4318,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                         }}
                       >
                         {(() => {
-                          const ps = selectedAction?.params;
+                          const ps = detailAction?.params;
                           if (!maskSensitive || !isSensitiveField(ps?.selector)) return JSON.stringify(ps, null, 2);
                           const masked = { ...ps };
                           if (masked.value) masked.value = "••••••";

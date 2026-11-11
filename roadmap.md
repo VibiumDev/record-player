@@ -5,6 +5,8 @@
 - Clicking play must leave the timeline and inspector panels exactly as the user left them (open or closed).
 
 ## Done
+- Detail pane keeps showing the last step's info between actions instead of flashing blank.
+- Step and console rows no longer show the "page@hash" suffix.
 - Inspector panel no longer resizes during playback (the detail toggle's row stays on screen for every step).
 - In stacked mode the detail toggle sits at the left edge, clear of the centered timeline toggle.
 - Detail toggle is always visible; when expanded it stays open even on steps with no detail data (blank panel).
