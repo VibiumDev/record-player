@@ -2454,7 +2454,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             {showCtl("sound") && (
               <button
                 onClick={() => setSound((on) => !on)}
-                title={sound ? "Sound is on: what was said and heard plays with the recording" : "Sound is off"}
+                title={soundTitle}
                 aria-label="Sound"
                 aria-pressed={sound}
                 style={{
