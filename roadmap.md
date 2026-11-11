@@ -3,6 +3,7 @@
 ## Open
 - Cursor destination: a circle (not a box), shown only when the destination element has no bounding box to highlight.
 - Clicking play must leave the timeline and inspector panels exactly as the user left them (open or closed).
+- Inspector panel "bobs" up and down during playback in both stacked and side-by-side layouts — find and stop the jitter.
 
 ## Done
 - Eject in the wide toolbar is icon-only (no "Eject" word); the name stays in its tooltip and accessible label.
