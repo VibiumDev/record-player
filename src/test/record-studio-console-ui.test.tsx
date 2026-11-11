@@ -283,6 +283,10 @@ describe("RecordStudio console UI", () => {
 
   it("moves eject into the overflow menu when the toolbar is narrow", async () => {
     window.history.pushState({}, "", "/?i=v&t=h&c=v");
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        callback;
         constructor(callback) {
           this.callback = callback;
         }

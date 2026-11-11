@@ -23,6 +23,7 @@ describe("embedded toolbar", () => {
       { type: "after", callId: "c1", endTime: 100 },
     ]);
     const { container } = render(<RecordStudio initialFile={file} hideGlobalChrome />);
+    await screen.findByRole("button", { name: "Sound" });
     const names = Array.from(container.querySelectorAll("button")).map((b) => (b.getAttribute("aria-label") || b.textContent || "").trim()).filter(Boolean);
     console.log("EMBEDDED_BUTTONS:", JSON.stringify(names));
     expect(names.length).toBeGreaterThan(0);
