@@ -2391,13 +2391,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 fontWeight: 700,
                 outline: "none",
                 whiteSpace: "nowrap",
-                lineHeight: 1.2,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
               }}
             >
-              <ScissorsLineDashed size={mobile ? 15 : 18} strokeWidth={2} />
+              <ScissorsLineDashed size={mobile ? 15 : 18} strokeWidth={2} style={{ verticalAlign: "middle" }} />
             </button>
             {traceData?.audio && (
               <button

@@ -357,12 +357,9 @@ export default function CompareStudio() {
             fontWeight: 700,
             outline: "none",
             whiteSpace: "nowrap",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
           }}
         >
-          <ScissorsLineDashed size={17} strokeWidth={2} />
+          <ScissorsLineDashed size={17} strokeWidth={2} style={{ verticalAlign: "middle" }} />
         </button>
           <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
           <button
