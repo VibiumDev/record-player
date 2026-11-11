@@ -1398,45 +1398,41 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
-// What shows while a recording is on its way: the logo on a turning record.
-// It turns 33⅓ times a minute, and stays still for a reader who asked for
-// less motion.
+// The record turns 34 times a minute: selenium is element 34.
+const RECORD_TURN = `${(60 / 34).toFixed(4)}s`;
+
+// What shows while a recording is on its way: the turning record the logo
+// becomes when it is clicked, larger and in the middle of the page. The
+// ring and its glow grow with the size, from what they are at 48 px. It
+// stays still for a reader who asked for less motion.
 function LoadingRecord({ V, size = 96 }) {
+  const ring = size / 16;
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-      <style>{`@keyframes loading-record-turn{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.loading-record-disc{animation:none!important}}`}</style>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: size / 2 }}>
+      <style>{`@keyframes spin-record{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.loading-record{animation:none!important}}`}</style>
       <div
-        className="loading-record-disc"
         aria-hidden="true"
         style={{
           width: size,
           height: size,
-          boxSizing: "border-box",
           borderRadius: "50%",
-          border: `3px solid ${V.orange}`,
-          // The grooves, and a sheen that shows the turning.
-          background: `conic-gradient(from 0deg, transparent 0deg, ${V.orange}33 40deg, transparent 80deg, transparent 180deg, ${V.orange}22 220deg, transparent 260deg), repeating-radial-gradient(circle, ${V.bgCard} 0 3px, ${V.border} 3px 4px)`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          animation: "loading-record-turn 1.8s linear infinite",
+          boxShadow: `0 0 0 ${ring}px ${V.orange}44, 0 0 ${ring * 5.33}px ${ring * 1.33}px ${V.orange}66`,
         }}
       >
-        <div
+        <img
+          className="loading-record"
+          src={VIBIUM_LOGO_HI}
+          alt=""
           style={{
-            width: size * 0.6,
-            height: size * 0.6,
-            borderRadius: "50%",
-            background: V.bg,
-            border: `1px solid ${V.orange}`,
-            boxSizing: "border-box",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            width: size,
+            height: (size * 62) / 48,
+            animation: `spin-record ${RECORD_TURN} linear infinite`,
+            transformOrigin: "50% 50%",
           }}
-        >
-          <img src={VIBIUM_LOGO_HI} alt="" style={{ height: size * 0.42, width: "auto" }} />
-        </div>
+        />
       </div>
       <div role="status" aria-live="polite" style={{ color: V.orange, fontSize: 14 }}>Loading record…</div>
     </div>
@@ -2404,7 +2400,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               style={{
                 width: 48,
                 height: 62,
-                animation: "spin-record 3s linear infinite",
+                animation: `spin-record ${RECORD_TURN} linear infinite`,
                 animationPlayState: logoActive ? "running" : "paused",
                 transformOrigin: "50% 50%",
               }}
@@ -2716,7 +2712,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               style={{
                 width: 22,
                 height: 28,
-                animation: "spin-record 3s linear infinite",
+                animation: `spin-record ${RECORD_TURN} linear infinite`,
                 animationPlayState: logoActive ? "running" : "paused",
                 transformOrigin: "50% 50%",
               }}
