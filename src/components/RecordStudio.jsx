@@ -2193,11 +2193,20 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     ? `Skip idle (${fmt(skipIdleSavedMs)} skippable)`
     : "Skip idle";
 
+  // Sound is always offered: it is a preference the viewer carries between
+  // recordings, so hiding it when the current file is silent would move the
+  // toolbar around as different recordings load.
+  const hasSound = !!traceData?.audio?.sounds?.length;
+  const soundTitle = !hasSound
+    ? "No audio in this recording"
+    : sound
+      ? "Sound is on: what was said and heard plays with the recording"
+      : "Sound is off";
+
   // Options leave the toolbar in this order as it narrows (first = first to go).
   const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed"];
   const allowedCtl = (k) => {
     if (Array.isArray(controls) && !controls.includes(k)) return false;
-    if (k === "sound") return !!traceData?.audio;
     if (k === "layout") return !mobile && !forceLayout;
         return true;
   };
@@ -2445,7 +2454,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             {showCtl("sound") && (
               <button
                 onClick={() => setSound((on) => !on)}
-                title={sound ? "Sound is on: what was said and heard plays with the recording" : "Sound is off"}
+                title={soundTitle}
                 aria-label="Sound"
                 aria-pressed={sound}
                 style={{
@@ -2640,7 +2649,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       >
                         {row.icon}
                         <span style={{ flex: 1 }}>{row.text}</span>
-                        {k !== "theme" && <span style={{ fontSize: 11, opacity: 0.8 }}>{row.on ? "On" : "Off"}</span>}
+                        {k !== "theme" && <span style={{ fontSize: 11, opacity: 0.8 }}>{k === "sound" && !hasSound ? "no audio" : row.on ? "On" : "Off"}</span>}
                       </button>
                     );
                   })}
