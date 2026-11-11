@@ -2220,7 +2220,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   };
   const allowedList = OVERFLOW_ORDER.filter(allowedCtl);
   const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108, eject: 44, time: mobile ? 95 : 180 };
-  const baseW = (mobile ? 165 : 240) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + 60;
+  const baseW = (mobile ? 165 : 304) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + 60;
   let needW = baseW + allowedList.reduce((sum, k) => sum + CTL_W[k], 0) + 24;
   const hiddenCtl = new Set();
   for (const k of allowedList) {
@@ -2335,28 +2335,30 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             >
               ⏮
             </button>
-            {mobile && (
-              <button
-                onClick={() => {
-                  setIsPlaying(false);
-                  const prev = [...filteredActions].reverse().find((a) => a.startTime < playhead - 10);
-                  setPlayhead(prev ? prev.endTime || prev.startTime : 0);
-                  if (prev) setSelectedAction(prev);
-                }}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: V.textDim,
-                  cursor: "pointer",
-                  padding: "3px 6px",
-                  borderRadius: 6,
-                  fontSize: 16,
-                  outline: "none",
-                }}
-              >
-                ◀
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setIsPlaying(false);
+                let prev = null;
+                for (let i = navStops.length - 1; i >= 0; i--) {
+                  if (navStops[i].time < playhead - 10) { prev = navStops[i]; break; }
+                }
+                setPlayhead(prev ? prev.time : 0);
+                if (prev) setSelectedAction(prev.action);
+              }}
+              title="Previous step"
+              style={{
+                background: "none",
+                border: "none",
+                color: V.textDim,
+                cursor: "pointer",
+                padding: "3px 6px",
+                borderRadius: 6,
+                fontSize: 16,
+                outline: "none",
+              }}
+            >
+              ◀
+            </button>
             <button
               onClick={() => setIsPlaying(!isPlaying)}
               style={{
@@ -2377,30 +2379,30 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             >
               {isPlaying ? "⏸" : "▶"}
             </button>
-            {mobile && (
-              <button
-                onClick={() => {
-                  setIsPlaying(false);
-                  const next = filteredActions.find((a) => a.startTime > playhead + 10);
-                  if (next) {
-                    setPlayhead(next.endTime || next.startTime);
-                    setSelectedAction(next);
-                  }
-                }}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: V.textDim,
-                  cursor: "pointer",
-                  padding: "3px 6px",
-                  borderRadius: 6,
-                  fontSize: 16,
-                  outline: "none",
-                }}
-              >
-                ▶
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setIsPlaying(false);
+                let next = null;
+                for (const s of navStops) {
+                  if (s.time > playhead + 10) { next = s; break; }
+                }
+                setPlayhead(next ? next.time : D);
+                if (next) setSelectedAction(next.action);
+              }}
+              title="Next step"
+              style={{
+                background: "none",
+                border: "none",
+                color: V.textDim,
+                cursor: "pointer",
+                padding: "3px 6px",
+                borderRadius: 6,
+                fontSize: 16,
+                outline: "none",
+              }}
+            >
+              ▶
+            </button>
             <button
               onClick={() => {
                 setPlayhead(D);
