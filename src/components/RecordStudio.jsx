@@ -2153,6 +2153,16 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     setSelectedAction(currentAction);
   }, [currentAction, isPlaying]);
 
+  // The detail pane keeps showing the last step it had, so it doesn't flash
+  // blank in the gaps between actions (selectedAction clears between them so
+  // the highlight box can turn off).
+  const lastDetailAction = useRef(null);
+  if (selectedAction) lastDetailAction.current = selectedAction;
+  useEffect(() => {
+    lastDetailAction.current = null;
+  }, [traceData]);
+  const detailAction = selectedAction || lastDetailAction.current;
+
   // ─── Scroll timeline to selected action ─────────────────────────────
   useEffect(() => {
     if (!selectedAction || !scrollRef.current || !traceData) return;
