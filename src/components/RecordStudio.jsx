@@ -1107,6 +1107,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   const [trail, setTrail] = useState(null); // { points, progress, fading, clicks }
   const lastCallRef = useRef(null);
   const rafRef = useRef(0);
+  const animatingRef = useRef(false);
 
   useEffect(() => {
     const mapPoints = () => {
@@ -1136,6 +1137,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
         cancelAnimationFrame(rafRef.current);
         const t0 = performance.now();
         const clicks = [];
+        animatingRef.current = true;
         const tick = (now) => {
           const k = Math.min(1, (now - t0) / POINTER_GLIDE_MS);
           const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; // ease in-out
@@ -1147,7 +1149,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
           setPos({ x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r, visible: true, instant: true });
           setTrail({ points: m.path, upTo: f, fading: false, clicks: clicks.map((j) => m.path[j]), key });
           if (k < 1) rafRef.current = requestAnimationFrame(tick);
-          else setTrail((tr) => tr && { ...tr, fading: true });
+          else { animatingRef.current = false; setTrail((tr) => tr && { ...tr, fading: true }); }
         };
         rafRef.current = requestAnimationFrame(tick);
         return;
@@ -1157,7 +1159,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     };
     recalc();
     // Recalculate after panel transition settles
-    const t = setTimeout(() => { if (!trail || trail.fading) recalc(); }, 250);
+    const t = setTimeout(() => { if (!animatingRef.current) recalc(); }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide]);
@@ -1169,6 +1171,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   if (trail && trail.upTo % 1 && shown.length) shown.push({ x: pos.x, y: pos.y });
   return (
     <>
+      <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }`}</style>
       {trail && shown.length > 1 && (
         <svg
           key={trail.key}
@@ -3183,8 +3186,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}-${layoutMode}-${screenshotH}`}
                   />
                 )}
-                {overlayEnabled && (
+                {overlayEnabled && !(shownVideo && isPlaying) && (
                   <PersistentCursor
+                    glide={!isPlaying}
                     action={(() => {
                       const actions = traceData?.actions || [];
                       let best = null;
@@ -5117,6 +5121,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 });
 
 export const __recordStudioInternals = {
+  attachPointerPaths,
   wavPeaks,
   audibleSpans,
   humanizePointer,
