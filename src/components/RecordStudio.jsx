@@ -2219,7 +2219,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         return true;
   };
   const allowedList = OVERFLOW_ORDER.filter(allowedCtl);
-  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108, eject: mobile ? 40 : 92, time: mobile ? 95 : 180 };
+  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108, eject: 44, time: mobile ? 95 : 180 };
   const baseW = (mobile ? 165 : 240) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + 60;
   let needW = baseW + allowedList.reduce((sum, k) => sum + CTL_W[k], 0) + 24;
   const hiddenCtl = new Set();
