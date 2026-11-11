@@ -2244,8 +2244,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             borderBottom: `1px solid ${V.border}`,
             display: "flex",
             alignItems: "center",
-            padding: mobile ? "0 8px" : "0 14px",
-            gap: mobile ? 6 : 12,
+            padding: mobile ? (toolbarW < 400 ? "0 4px" : "0 8px") : "0 14px",
+            gap: mobile ? (toolbarW < 400 ? 3 : 6) : 12,
             flexShrink: 0,
             position: "relative",
           }}
