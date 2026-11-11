@@ -2657,6 +2657,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       );
                     }
                     return (
+                      <button
+                        key={k}
+                        role="menuitemcheckbox"
                         aria-checked={row.on}
                         onClick={row.act}
                         style={{
