@@ -338,7 +338,10 @@ describe("RecordStudio console UI", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "More options" }));
     expect(container.querySelector("[data-time-readout]")).toBeNull();
-    expect(await screen.findByText("Time")).toBeInTheDocument();
+    const rows = (await screen.findByRole("menu")).textContent || "";
+    expect(rows.indexOf("Time")).toBeGreaterThanOrEqual(0);
+    expect(rows.indexOf("Speed")).toBeGreaterThan(rows.indexOf("Time"));
+    expect(rows.indexOf("Eject")).toBeGreaterThan(rows.indexOf("Speed"));
   });
 
   it("hides eject and the dark/light toggle when the player is embedded", async () => {    window.history.pushState({}, "", "/?i=v&t=h&c=v");
