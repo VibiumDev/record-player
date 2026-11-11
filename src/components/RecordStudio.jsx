@@ -2493,6 +2493,31 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 )}
               </button>
             )}
+            {showCtl("highlight") && (
+              <button
+                onClick={() => setOverlayEnabled(!overlayEnabled)}
+                title={overlayEnabled ? "Disable highlight" : "Enable highlight"}
+                aria-label="Highlight"
+                aria-pressed={overlayEnabled}
+                style={{
+                  background: overlayEnabled ? V.orange + "18" : "none",
+                  border: overlayEnabled ? `1px solid ${V.orange}40` : "1px solid transparent",
+                  color: overlayEnabled ? V.orange : V.textDim,
+                  cursor: "pointer",
+                  padding: mobile ? "3px 6px" : "3px 8px",
+                  borderRadius: 6,
+                  fontSize: mobile ? 16 : 20,
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                  transition: "all 0.15s",
+                  outline: "none",
+                  whiteSpace: "nowrap",
+                  height: mobile ? undefined : 38,
+                }}
+              >
+                <Flashlight size={mobile ? 15 : 18} strokeWidth={2} style={{ verticalAlign: "middle" }} />
+              </button>
+            )}
           </div>
 
           {showCtl("time") && (
