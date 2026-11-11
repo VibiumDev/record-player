@@ -1183,8 +1183,10 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
             opacity: trail.fading ? 0 : 1, transition: trail.fading ? `opacity ${POINTER_TRAIL_FADE_MS}ms ease-out` : "none",
           }}
         >
-          <polyline points={shown.map((pt) => `${pt.x},${pt.y}`).join(" ")} fill="none" stroke={color} strokeOpacity={0.8}
-            strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={shown.map((pt) => `${pt.x},${pt.y}`).join(" ")} fill="none" stroke={color} strokeOpacity={POINTER_TRAIL_OPACITY}
+            strokeWidth={POINTER_TRAIL_W} strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={shown.map((pt) => `${pt.x},${pt.y}`).join(" ")} fill="none" stroke={color} strokeOpacity={POINTER_TRAIL_OPACITY}
+            strokeWidth={POINTER_TRAIL_W * 0.5} strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
       {trail?.clicks.map((pt, i) => (
