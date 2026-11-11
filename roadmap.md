@@ -1,10 +1,13 @@
 # Roadmap
 
 ## Open
-- Cursor destination: a circle (not a box), shown only when the destination element has no bounding box to highlight — implemented, needs a visual check in the preview.
-- Clicking play must leave the timeline and inspector panels exactly as the user left them (open or closed).
 
 ## Done
+- No more drawn cursor arrow — the screenshot's real cursor is enough; only the destination circle and click ripples remain.
+- Circle and ripples play exactly once per step; pause/unpause and panel resizes no longer replay them.
+- Destination circle appears on landing a step, then fades away after ~1.5s instead of lingering.
+- Cursor destination: a circle (not a box), shown only when the destination element has no bounding box to highlight.
+- Clicking play leaves the timeline and inspector panels exactly as the user left them (open or closed).
 - Detail pane keeps showing the last step's info between actions instead of flashing blank.
 - Step and console rows no longer show the "page@hash" suffix.
 - Inspector panel no longer resizes during playback (the detail toggle's row stays on screen for every step).

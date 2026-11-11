@@ -789,18 +789,7 @@ function parseUrlParams() {
   }
 }
 
-// ─── Action Overlay (cursor, highlight, ripple, caret) ──────────────────────
-const CURSOR_SVG = (
-  <svg
-    width="32"
-    height="32"
-    viewBox="0 0 24 24"
-    fill="none"
-    style={{ filter: "drop-shadow(1px 2px 3px rgba(0,0,0,0.5))" }}
-  >
-    <path d="M5 3l14 8-6.5 1.5L11 19z" fill="#fff" stroke="#000" strokeWidth="1.5" strokeLinejoin="round" />
-  </svg>
-);
+// ─── Action Overlay (highlight, ripple, caret) ──────────────────────────────
 
 // ─── Coordinate normalization helper ────────────────────────────────────────
 // Tries multiple coordinate bases + boost factors and picks the lowest-penalty fit.
@@ -1162,82 +1151,54 @@ const outlineLook = (lum) => {
 // For pointer actions it glides along the recorded path toward an outlined
 // destination, with a ripple where the pointer clicked.
 const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide = true, color = "#f97316" }) => {
-  const [pos, setPos] = useState({ x: 0, y: 0, visible: false });
-  const [trail, setTrail] = useState(null); // { points, progress, fading, clicks }
-  const [dest, setDest] = useState(null); // { x, y, key, lum } — where the pointer is heading
-  const lastCallRef = useRef(null);
-  const rafRef = useRef(0);
-  const animatingRef = useRef(false);
+  const [dest, setDest] = useState(null); // { x, y, key, lum } — where the pointer landed
+  const [ripples, setRipples] = useState([]); // [{ id, x, y }] — click points along the path
+  // Each step's circle/ripples play exactly once. Pause/unpause (or a panel
+  // resize) re-runs the effect with the same action, and must not replay them.
+  const seenRef = useRef(new Set());
+  const timersRef = useRef([]);
 
   useEffect(() => {
-    const mapPoints = () => {
-      if (!imgEl || !containerEl || !action?.point) return null;
-      const { natW, natH } = naturalSize(imgEl);
-      const cRect = containerEl.getBoundingClientRect();
-      const iRect = imgEl.getBoundingClientRect();
-      if (!iRect.width || !iRect.height) return null;
-      const imgLeft = iRect.left - cRect.left;
-      const imgTop = iRect.top - cRect.top;
-      const map = (point) => {
-        const norm = normalizeActionCoords({ action: { ...action, point, box: undefined }, screenshot, viewport, dpr, imgW: iRect.width, imgH: iRect.height, natW, natH });
-        return norm && { x: imgLeft + norm.px, y: imgTop + norm.py };
-      };
-      const end = map(action.point);
-      if (!end) return null;
-      const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
-      return { end, path, lum: screenshotLuminance(imgEl, [...path, end], imgLeft, imgTop, iRect.width, iRect.height) };
+    if (!imgEl || !containerEl || !action?.point) { setDest(null); return; }
+    const key = action?.callId ?? action?.id ?? `${action.point.x},${action.point.y}`;
+    if (seenRef.current.has(key)) return;
+    const { natW, natH } = naturalSize(imgEl);
+    const cRect = containerEl.getBoundingClientRect();
+    const iRect = imgEl.getBoundingClientRect();
+    if (!iRect.width || !iRect.height) return;
+    const imgLeft = iRect.left - cRect.left;
+    const imgTop = iRect.top - cRect.top;
+    const map = (point) => {
+      const norm = normalizeActionCoords({ action: { ...action, point, box: undefined }, screenshot, viewport, dpr, imgW: iRect.width, imgH: iRect.height, natW, natH });
+      return norm && { x: imgLeft + norm.px, y: imgTop + norm.py };
     };
-    const recalc = () => {
-      const m = mapPoints();
-      if (!m) return;
-      const key = action?.callId ?? action?.id;
-      const fresh = key !== lastCallRef.current;
-      lastCallRef.current = key;
-      if (fresh) setDest({ x: m.end.x, y: m.end.y, key, lum: m.lum });
-      if (fresh && glide && m.path.length > 1) {
-        cancelAnimationFrame(rafRef.current);
-        const t0 = performance.now();
-        const clicks = [];
-        animatingRef.current = true;
-        const tick = (now) => {
-          const k = Math.min(1, (now - t0) / POINTER_GLIDE_MS);
-          const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; // ease in-out
-          const f = e * (m.path.length - 1);
-          const i = Math.min(m.path.length - 2, Math.floor(f));
-          const r = f - i;
-          const a = m.path[i], b = m.path[i + 1];
-          for (let j = 0; j <= Math.round(f); j++) if (m.path[j].click && !clicks.includes(j)) clicks.push(j);
-          setPos({ x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r, visible: true, instant: true });
-          setTrail({ points: m.path, upTo: f, fading: false, clicks: clicks.map((j) => m.path[j]), key, lum: m.lum });
-          if (k < 1) rafRef.current = requestAnimationFrame(tick);
-          else { animatingRef.current = false; setTrail((tr) => tr && { ...tr, fading: true }); }
-        };
-        rafRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      if (fresh) setTrail(null);
-      setDest({ x: m.end.x, y: m.end.y, key, lum: m.lum });
-      setPos({ x: m.end.x, y: m.end.y, visible: true, instant: false });
-    };
-    recalc();
-    // Recalculate after panel transition settles
-    const t = setTimeout(() => { if (!animatingRef.current) recalc(); }, 250);
-    return () => clearTimeout(t);
+    const end = map(action.point);
+    if (!end) return;
+    const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
+    seenRef.current.add(key);
+    const lum = screenshotLuminance(imgEl, [...path, end], imgLeft, imgTop, iRect.width, iRect.height);
+    setDest({ x: end.x, y: end.y, key, lum });
+    timersRef.current.push(setTimeout(() => setDest((d) => (d?.key === key ? null : d)), 1500));
+    // Ripples fire at the click points, staggered as if the pointer glided there.
+    path.forEach((pt, i) => {
+      if (!pt.click) return;
+      const at = glide && path.length > 1 ? (i / (path.length - 1)) * POINTER_GLIDE_MS : 0;
+      const id = `${key}-c${i}`;
+      timersRef.current.push(setTimeout(() => {
+        setRipples((rs) => [...rs, { id, x: pt.x, y: pt.y }]);
+        timersRef.current.push(setTimeout(() => setRipples((rs) => rs.filter((r) => r.id !== id)), 700));
+      }, at));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide]);
 
-  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+  useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
 
-  // A step with nowhere to point (a wait, a listen) shows no destination.
-  useEffect(() => {
-    if (!action?.point) setDest(null);
-  }, [action]);
-
-  if (!pos.visible) return null;
+  if (!dest && ripples.length === 0) return null;
   return (
     <>
       <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
-        @keyframes ov-dest { from { opacity: 0; transform: translate(-50%,-50%) scale(1.25); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+         @keyframes ov-dest { 0% { opacity: 0; transform: translate(-50%,-50%) scale(1.25); } 15% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-50%) scale(1); } }
         @keyframes ov-dest-ping { from { transform: scale(0.8); opacity: 0.75; } to { transform: scale(1.7); opacity: 0; } }`}</style>
       {dest && glide && !action?.box && (() => {
         const look = outlineLook(dest.lum);
@@ -1248,35 +1209,23 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
               position: "absolute", left: dest.x, top: dest.y, width: POINTER_DEST_SIZE, height: POINTER_DEST_SIZE,
               transform: "translate(-50%,-50%)", borderRadius: "50%", border: `2px solid ${look.stroke}`,
               boxShadow: `0 0 18px ${look.glow}, inset 0 0 14px ${look.glow}`,
-              pointerEvents: "none", zIndex: 6, animation: "ov-dest 0.28s ease-out",
+              pointerEvents: "none", zIndex: 6, animation: "ov-dest 1.5s ease-out forwards",
             }}
           >
             <div style={{ position: "absolute", inset: -2, borderRadius: "50%", border: `2px solid ${look.stroke}`, pointerEvents: "none", animation: "ov-dest-ping 0.9s ease-out forwards" }} />
           </div>
         );
       })()}
-      {trail?.clicks.map((pt, i) => (
+      {ripples.map((r) => (
         <div
-          key={`${trail.key}-c${i}`}
+          key={r.id}
           style={{
-            position: "absolute", left: pt.x, top: pt.y, width: 40, height: 40, borderRadius: "50%",
+            position: "absolute", left: r.x, top: r.y, width: 40, height: 40, borderRadius: "50%",
             border: `2px solid ${color}`, pointerEvents: "none", zIndex: 6,
             animation: "ov-ripple 0.6s ease-out forwards",
           }}
         />
       ))}
-      <div
-        style={{
-          position: "absolute",
-          left: pos.x,
-          top: pos.y,
-          transition: pos.instant ? "none" : "left 0.35s cubic-bezier(0.4, 0, 0.2, 1), top 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
-          zIndex: 6,
-          pointerEvents: "none",
-        }}
-      >
-        {CURSOR_SVG}
-      </div>
     </>
   );
 };
