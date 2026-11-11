@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import { parseRecording } from "../packages/player-core";
 import { RecordPlayer } from "../packages/player-react";
+import { ScissorsLineDashed } from "lucide-react";
 
 /* Browser recording studio — archive decoding is provided by player-core. */
 
@@ -2391,9 +2392,12 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 outline: "none",
                 whiteSpace: "nowrap",
                 lineHeight: 1.2,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {"\u23E9\uFE0E"}
+              <ScissorsLineDashed size={mobile ? 15 : 18} strokeWidth={2} />
             </button>
             {traceData?.audio && (
               <button
