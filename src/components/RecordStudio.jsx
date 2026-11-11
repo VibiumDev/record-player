@@ -1281,6 +1281,25 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   );
 };
 
+// Scroll a panel row into view only when it is actually out of sight. Calling
+// scrollIntoView on every render re-centers the list each frame, which reads
+// as the panel bobbing during playback.
+function keepRowInView(el) {
+  if (!el) return;
+  let sc = el.parentElement;
+  while (sc) {
+    const oy = getComputedStyle(sc).overflowY;
+    if (oy === "auto" || oy === "scroll") break;
+    sc = sc.parentElement;
+  }
+  if (!sc) return;
+  const r = el.getBoundingClientRect();
+  const b = sc.getBoundingClientRect();
+  if (r.top < b.top + 2 || r.bottom > b.bottom - 2) {
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
 const ActionOverlay = forwardRef(function ActionOverlay(
   { action, screenshot, viewport, dpr, imgEl, containerEl, showDebug, layoutKey },
   _ref,
@@ -3661,7 +3680,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 </div>
               )}
 
-              <div style={{ flex: 1, overflowY: "auto", padding: 4, userSelect: "text" }}>
+              <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: 4, userSelect: "text" }}>
                 {/* Actions panel */}
                 {activePanel === "actions" &&
                   (() => {
@@ -3792,11 +3811,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       return (
                         <div
                           key={`a-${i}`}
-                          ref={
-                            isActive || selectedAction === a
-                              ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" })
-                              : undefined
-                          }
+                          ref={isActive || selectedAction === a ? (el) => keepRowInView(el) : undefined}
                           onClick={() => {
                             setPlayhead(a.endTime || a.startTime);
                             setSelectedAction(a);
@@ -3909,9 +3924,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     return (
                       <div
                         key={i}
-                        ref={
-                          isActive ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined
-                        }
+                        ref={isActive ? (el) => keepRowInView(el) : undefined}
                         onClick={() => setPlayhead(n.startTime)}
                         style={{
                           display: "flex",
@@ -3969,9 +3982,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     return (
                       <div
                         key={i}
-                        ref={
-                          isActive ? (el) => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }) : undefined
-                        }
+                        ref={isActive ? (el) => keepRowInView(el) : undefined}
                         onClick={() => {
                           setPlayhead(c.time);
                           setSelectedConsoleEvent(c);
