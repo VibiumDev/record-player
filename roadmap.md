@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Open
+- Space-bar pause/unpause replays the destination circle and click ripple each time — should only play when landing on a new step.
 
 ## Done
 - Destination circle appears on landing a step, then fades away after ~1.5s instead of lingering.
