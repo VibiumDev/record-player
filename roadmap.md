@@ -1,7 +1,8 @@
 # Roadmap
 
 ## Open
-- No path line: show a blueish/purple outline of the cursor's destination (old desktop animation style), background-aware so it reads on light and dark screenshots.
+- Cursor destination: a circle (not a box), shown only when the destination element has no bounding box to highlight.
+- Clicking play must leave the timeline and inspector panels exactly as the user left them (open or closed).
 
 ## Done
 - Eject in the wide toolbar is icon-only (no "Eject" word); the name stays in its tooltip and accessible label.
