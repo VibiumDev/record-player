@@ -388,6 +388,32 @@ function heardOnset(traceData, action) {
   return typeof onset === "number" ? onset - (traceData?.timelineStart || 0) : undefined;
 }
 
+// HID pointer coordinates span 0..32767 across the screen.
+const HID_MAX = 32767;
+
+// Gives each pointer action the path it moved along, in screen pixels, and
+// its final point. Inputs carry no per-point times: a path is spread evenly
+// over its step. A click entry marks the point the pointer was at.
+function attachPointerPaths(actions, frame) {
+  for (const a of actions || []) {
+    if (!isPointerAction(a.apiName)) continue;
+    const inputs = Array.isArray(a.params?.inputs) ? a.params.inputs : [];
+    const raw = [];
+    for (const input of inputs) {
+      const x = Number(input?.x), y = Number(input?.y);
+      if (Number.isFinite(x) && Number.isFinite(y)) raw.push({ x, y, click: false });
+      else if (/click|press|down/i.test(input?.cmd || "") && raw.length) raw[raw.length - 1].click = true;
+    }
+    if (!raw.length) continue;
+    const hid = frame?.width && frame?.height && raw.some((pt) => pt.x > frame.width * 1.5 || pt.y > frame.height * 1.5);
+    const path = raw.map((pt) => hid
+      ? { x: (pt.x / HID_MAX) * frame.width, y: (pt.y / HID_MAX) * frame.height, click: pt.click }
+      : pt);
+    a.pointerPath = path;
+    if (!a.point) a.point = { x: path[path.length - 1].x, y: path[path.length - 1].y };
+  }
+}
+
 function browserRecordingView(recording) {
   const browserEvents = recording.timeline.events;
   const contextOptions = recording.format === "vibium" ? recording.metadata.contextOptions : undefined;
@@ -497,6 +523,7 @@ function browserRecordingView(recording) {
     audio: audioView(recording),
     videos: videoView(recording),
   };
+  attachPointerPaths(view.actions, view.fallbackViewport);
   view.skipIdleSegments = buildSkipIdleSegments(view);
   return view;
 }
@@ -1068,46 +1095,118 @@ const PlayheadVideo = ({ src, seconds, playing, speed, elRef, onSize, onBroken }
   );
 };
 
-// Persistent cursor component — always visible, animates between positions
-const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl, layoutKey }) => {
+// How long the cursor takes to glide along a pointer action's path when stepping.
+const POINTER_GLIDE_MS = 600;
+const POINTER_TRAIL_FADE_MS = 1200;
+
+// Persistent cursor component — always visible, animates between positions.
+// For pointer actions it glides along the recorded path, leaving a fading
+// trail, with a ripple where the pointer clicked.
+const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide = true, color = "#f97316" }) => {
   const [pos, setPos] = useState({ x: 0, y: 0, visible: false });
+  const [trail, setTrail] = useState(null); // { points, progress, fading, clicks }
+  const lastCallRef = useRef(null);
+  const rafRef = useRef(0);
+  const animatingRef = useRef(false);
 
   useEffect(() => {
-    const recalc = () => {
-      if (!imgEl || !containerEl) return;
-      if (!action || !action.point) return;
+    const mapPoints = () => {
+      if (!imgEl || !containerEl || !action?.point) return null;
       const { natW, natH } = naturalSize(imgEl);
       const cRect = containerEl.getBoundingClientRect();
       const iRect = imgEl.getBoundingClientRect();
-      if (!iRect.width || !iRect.height) return;
+      if (!iRect.width || !iRect.height) return null;
       const imgLeft = iRect.left - cRect.left;
       const imgTop = iRect.top - cRect.top;
-      const imgW = iRect.width;
-      const imgH = iRect.height;
-      const norm = normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, natW, natH });
-      if (!norm) return;
-      setPos({ x: imgLeft + norm.px, y: imgTop + norm.py, visible: true });
+      const map = (point) => {
+        const norm = normalizeActionCoords({ action: { ...action, point, box: undefined }, screenshot, viewport, dpr, imgW: iRect.width, imgH: iRect.height, natW, natH });
+        return norm && { x: imgLeft + norm.px, y: imgTop + norm.py };
+      };
+      const end = map(action.point);
+      if (!end) return null;
+      const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
+      return { end, path };
+    };
+    const recalc = () => {
+      const m = mapPoints();
+      if (!m) return;
+      const key = action?.callId ?? action?.id;
+      const fresh = key !== lastCallRef.current;
+      lastCallRef.current = key;
+      if (fresh && glide && m.path.length > 1) {
+        cancelAnimationFrame(rafRef.current);
+        const t0 = performance.now();
+        const clicks = [];
+        animatingRef.current = true;
+        const tick = (now) => {
+          const k = Math.min(1, (now - t0) / POINTER_GLIDE_MS);
+          const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; // ease in-out
+          const f = e * (m.path.length - 1);
+          const i = Math.min(m.path.length - 2, Math.floor(f));
+          const r = f - i;
+          const a = m.path[i], b = m.path[i + 1];
+          for (let j = 0; j <= Math.round(f); j++) if (m.path[j].click && !clicks.includes(j)) clicks.push(j);
+          setPos({ x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r, visible: true, instant: true });
+          setTrail({ points: m.path, upTo: f, fading: false, clicks: clicks.map((j) => m.path[j]), key });
+          if (k < 1) rafRef.current = requestAnimationFrame(tick);
+          else { animatingRef.current = false; setTrail((tr) => tr && { ...tr, fading: true }); }
+        };
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      if (fresh) setTrail(null);
+      setPos({ x: m.end.x, y: m.end.y, visible: true, instant: false });
     };
     recalc();
     // Recalculate after panel transition settles
-    const t = setTimeout(recalc, 250);
+    const t = setTimeout(() => { if (!animatingRef.current) recalc(); }, 250);
     return () => clearTimeout(t);
-  }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl, layoutKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide]);
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   if (!pos.visible) return null;
+  const shown = trail ? trail.points.slice(0, Math.floor(trail.upTo) + 1) : [];
+  if (trail && trail.upTo % 1 && shown.length) shown.push({ x: pos.x, y: pos.y });
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: pos.x,
-        top: pos.y,
-        transition: "left 0.35s cubic-bezier(0.4, 0, 0.2, 1), top 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
-        zIndex: 6,
-        pointerEvents: "none",
-      }}
-    >
-      {CURSOR_SVG}
-    </div>
+    <>
+      <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }`}</style>
+      {trail && shown.length > 1 && (
+        <svg
+          key={trail.key}
+          style={{
+            position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 6,
+            opacity: trail.fading ? 0 : 1, transition: trail.fading ? `opacity ${POINTER_TRAIL_FADE_MS}ms ease-out` : "none",
+          }}
+        >
+          <polyline points={shown.map((pt) => `${pt.x},${pt.y}`).join(" ")} fill="none" stroke={color} strokeOpacity={0.8}
+            strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+      {trail?.clicks.map((pt, i) => (
+        <div
+          key={`${trail.key}-c${i}`}
+          style={{
+            position: "absolute", left: pt.x, top: pt.y, width: 40, height: 40, borderRadius: "50%",
+            border: `2px solid ${color}`, pointerEvents: "none", zIndex: 6,
+            animation: "ov-ripple 0.6s ease-out forwards",
+          }}
+        />
+      ))}
+      <div
+        style={{
+          position: "absolute",
+          left: pos.x,
+          top: pos.y,
+          transition: pos.instant ? "none" : "left 0.35s cubic-bezier(0.4, 0, 0.2, 1), top 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+          zIndex: 6,
+          pointerEvents: "none",
+        }}
+      >
+        {CURSOR_SVG}
+      </div>
+    </>
   );
 };
 
@@ -3087,10 +3186,14 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     layoutKey={`${showSide}-${sideW}-${showTimeline}-${timelineH}-${showDetail}-${detailH}-${layoutMode}-${screenshotH}`}
                   />
                 )}
-                {overlayEnabled && (
+                {overlayEnabled && !(shownVideo && isPlaying) && (
                   <PersistentCursor
+                    glide={!isPlaying}
                     action={(() => {
                       const actions = traceData?.actions || [];
+                      // A step the user picked wins over one starting at the same instant.
+                      if (selectedAction?.point && selectedAction.pageId === currentFrame.pageId &&
+                        playhead >= (selectedAction.startTime || 0) - 50 && playhead <= (selectedAction.endTime ?? selectedAction.startTime) + 50) return selectedAction;
                       let best = null;
                       for (const a of actions) {
                         if (a.point && a.pageId === currentFrame.pageId && (a.startTime || 0) <= playhead + 50) best = a;
@@ -5021,6 +5124,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 });
 
 export const __recordStudioInternals = {
+  attachPointerPaths,
   wavPeaks,
   audibleSpans,
   humanizePointer,

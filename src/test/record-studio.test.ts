@@ -105,6 +105,16 @@ describe("RecordStudio pointer and audio", () => {
     expect(humanizePointer({ apiName: "vibium:hid.mouse_move", params: { inputs: [{ cmd: "mouse_move" }, { cmd: "mouse_click" }] } })).toBe("Pointer click");
   });
 
+  it("turns HID pointer inputs into a pixel path with its click", () => {
+    const { attachPointerPaths } = __recordStudioInternals as any;
+    const a: any = { apiName: "Pointer.move ×3", params: { inputs: [
+      { cmd: "mouse_move", x: 0, y: 0 }, { cmd: "mouse_move", x: 32767, y: 16383.5 }, { cmd: "mouse_click", buttons: 1 },
+    ] } };
+    attachPointerPaths([a], { width: 444, height: 972 });
+    expect(a.pointerPath.map((p: any) => [Math.round(p.x), Math.round(p.y), p.click])).toEqual([[0, 0, false], [444, 486, true]]);
+    expect(a.point).toEqual({ x: 444, y: 486 });
+  });
+
   it("does not skip idle time while audio is audible", () => {
     // 10s of silence at 1kHz with a loud stretch from 4s to 6s.
     const samples = Array.from({ length: 10_000 }, (_, i) => (i >= 4000 && i < 6000 ? 16000 : 0));
