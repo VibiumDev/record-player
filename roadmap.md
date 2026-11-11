@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Open
-- (none)
+- Cursor trail is background-aware: darker/denser on light screenshots, lighter on dark ones (highlighter look, not a pen line).
 
 ## Done
 - Eject in the wide toolbar is icon-only (no "Eject" word); the name stays in its tooltip and accessible label.
