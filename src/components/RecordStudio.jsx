@@ -2193,11 +2193,20 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     ? `Skip idle (${fmt(skipIdleSavedMs)} skippable)`
     : "Skip idle";
 
+  // Sound is always offered: it is a preference the viewer carries between
+  // recordings, so hiding it when the current file is silent would move the
+  // toolbar around as different recordings load.
+  const hasSound = !!traceData?.audio?.sounds?.length;
+  const soundTitle = !hasSound
+    ? "Sound is on, but this recording has no audio"
+    : sound
+      ? "Sound is on: what was said and heard plays with the recording"
+      : "Sound is off";
+
   // Options leave the toolbar in this order as it narrows (first = first to go).
   const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed"];
   const allowedCtl = (k) => {
     if (Array.isArray(controls) && !controls.includes(k)) return false;
-    if (k === "sound") return !!traceData?.audio;
     if (k === "layout") return !mobile && !forceLayout;
         return true;
   };
