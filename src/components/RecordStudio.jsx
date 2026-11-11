@@ -126,7 +126,22 @@ function buildSkipIdleSegments(traceData, options = {}) {
     }
   }
 
-  return segments;
+  // Never skip over audible sound: cut audible stretches (padded) out of the gaps.
+  const spans = audibleSpans(traceData?.audio);
+  if (!spans.length) return segments;
+  const cut = [];
+  for (const seg of segments) {
+    let pieces = [{ start: seg.start, end: seg.end }];
+    for (const sp of spans) {
+      const a = sp.start - safePaddingMs, b = sp.end + safePaddingMs;
+      pieces = pieces.flatMap((pc) => (b <= pc.start || a >= pc.end ? [pc] : [
+        ...(a > pc.start ? [{ start: pc.start, end: a }] : []),
+        ...(b < pc.end ? [{ start: b, end: pc.end }] : []),
+      ]));
+    }
+    for (const pc of pieces) if (pc.end - pc.start > thresholdMs - 2 * safePaddingMs) cut.push({ ...pc, duration: pc.end - pc.start });
+  }
+  return cut;
 }
 
 function advancePlayheadWithSkip(from, to, skipSegments = []) {
@@ -185,18 +200,83 @@ function shortUrl(url) {
 // The audio of a recording as the player schedules it: every stretch of
 // sound with where it starts on the player's timeline. A recording's audio
 // times count from the recording's start; the timeline's from its first event.
+const WAVE_BUCKET_MS = 10;
+const wavePeaksCache = new WeakMap();
+
+// Per-10ms peak levels (0..1) of a 16-bit PCM WAV; null when unreadable.
+function wavPeaks(bytes) {
+  if (!bytes || !bytes.byteLength) return null;
+  if (wavePeaksCache.has(bytes)) return wavePeaksCache.get(bytes);
+  let out = null;
+  try {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const tag = (o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+    if (tag(0) === "RIFF" && tag(8) === "WAVE") {
+      let off = 12, ch = 1, rate = 16000, bits = 16, dataOff = -1, dataLen = 0;
+      while (off + 8 <= dv.byteLength) {
+        const id = tag(off), len = dv.getUint32(off + 4, true);
+        if (id === "fmt ") { ch = dv.getUint16(off + 10, true) || 1; rate = dv.getUint32(off + 12, true) || 16000; bits = dv.getUint16(off + 22, true); }
+        else if (id === "data") { dataOff = off + 8; dataLen = Math.min(len, dv.byteLength - dataOff); break; }
+        off += 8 + len + (len % 2);
+      }
+      if (dataOff >= 0 && bits === 16) {
+        const frames = Math.floor(dataLen / (2 * ch));
+        const per = Math.max(1, Math.round((rate * WAVE_BUCKET_MS) / 1000));
+        const peaks = new Float32Array(Math.ceil(frames / per));
+        for (let f = 0; f < frames; f++) {
+          const v = Math.abs(dv.getInt16(dataOff + f * 2 * ch, true)) / 32768;
+          const b = (f / per) | 0;
+          if (v > peaks[b]) peaks[b] = v;
+        }
+        out = peaks;
+      }
+    }
+  } catch { out = null; }
+  wavePeaksCache.set(bytes, out);
+  return out;
+}
+
+// Level at or above this counts as sound (≈ -34 dBFS).
+const AUDIBLE_LEVEL = 0.02;
+
+// Stretches of the timeline where any sound is audible, merged.
+function audibleSpans(audio, mergeMs = 400) {
+  const spans = [];
+  for (const sound of audio?.sounds || []) {
+    const peaks = sound.peaks;
+    if (!peaks) continue;
+    let start = -1;
+    for (let i = 0; i <= peaks.length; i++) {
+      const on = i < peaks.length && peaks[i] >= AUDIBLE_LEVEL;
+      if (on && start < 0) start = i;
+      if (!on && start >= 0) {
+        spans.push({ start: sound.startTime + start * WAVE_BUCKET_MS, end: sound.startTime + i * WAVE_BUCKET_MS });
+        start = -1;
+      }
+    }
+  }
+  spans.sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const sp of spans) {
+    const last = merged[merged.length - 1];
+    if (last && sp.start - last.end <= mergeMs) last.end = Math.max(last.end, sp.end);
+    else merged.push({ ...sp });
+  }
+  return merged;
+}
+
 function audioView(recording) {
   const audio = recording.format === "vibium" ? recording.audio : undefined;
   if (!audio) return null;
   const shift = recording.timeline.startTime || 0;
   const sounds = [];
   for (const track of audio.tracks || []) {
-    if (track.data) sounds.push({ id: track.id, kind: "heard", data: track.data, startTime: track.startMs - shift });
+    if (track.data) sounds.push({ id: track.id, kind: "heard", data: track.data, peaks: wavPeaks(track.data), startTime: track.startMs - shift });
   }
   for (const clip of audio.clips || []) {
     if (!clip.data) continue;
     (clip.plays || []).forEach((play, i) => {
-      sounds.push({ id: `${clip.id}@${i}`, kind: "said", data: clip.data, startTime: play.startMs - shift });
+      sounds.push({ id: `${clip.id}@${i}`, kind: "said", data: clip.data, peaks: wavPeaks(clip.data), startTime: play.startMs - shift });
     });
   }
   return sounds.length ? { sounds } : null;
@@ -474,6 +554,23 @@ function quote(text) {
   return `“${t.length > 140 ? t.slice(0, 138) + "…" : t}”`;
 }
 
+// Low-level pointer input (Vibium hid.mouse_*): moves, presses, releases.
+function isPointerAction(apiName) {
+  return /(^|[.:])(hid\.)?mouse[._](move|down|up|press|release|click|wheel)$/i.test(apiName || "");
+}
+
+function humanizePointer(action) {
+  const n = (action.apiName || "").toLowerCase();
+  const inputs = Array.isArray(action.params?.inputs) ? action.params.inputs : [];
+  const clicks = inputs.filter((i) => /click/i.test(i?.cmd || "")).length;
+  if (clicks || n.includes("click")) return clicks > 1 ? `Pointer click ×${clicks}` : "Pointer click";
+  if (n.includes("release") || n.includes("up")) return "Pointer release";
+  if (n.includes("press") || n.includes("down")) return "Pointer press";
+  if (n.includes("wheel")) return "Scroll wheel";
+  const moves = inputs.length || action.params?.count;
+  return moves > 1 ? `Pointer move ×${moves}` : "Pointer move";
+}
+
 function isSpeechAction(apiName) {
   return /(^|[.:])speech\.(say|listen)$/i.test(apiName || "");
 }
@@ -502,6 +599,7 @@ function humanizeAction(action, mask = true, at, onset) {
   const short = sel.length > 28 ? sel.slice(0, 26) + "…" : sel;
 
   if (isSpeechAction(action.apiName)) return humanizeSpeech(action, at, onset);
+  if (isPointerAction(action.apiName)) return humanizePointer(action);
 
   if (n.includes("navigate") || n.includes("goto")) {
     try {
@@ -546,6 +644,7 @@ function isHumanAction(apiName) {
     n.includes("navigate") ||
     n.includes("click") ||
     n.includes("tap") ||
+    isPointerAction(apiName) ||
     n.includes("fill") ||
     n.includes("type") ||
     n.includes("press") ||
