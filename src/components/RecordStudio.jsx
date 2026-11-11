@@ -4246,7 +4246,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       {showDetail ? "▾" : "▴"}
                     </div>
                   </div>
-                  {showDetail && selectedAction && (
+                  {showDetail && (
                     <div
                       style={{
                         height: detailH,
@@ -4265,8 +4265,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           marginBottom: 4,
                         }}
                       >
-                        <div style={{ fontSize: 14, fontWeight: 600, color: actionColor(selectedAction.apiName) }}>
-                          {selectedAction.apiName}
+                        <div style={{ fontSize: 14, fontWeight: 600, color: actionColor(selectedAction?.apiName) }}>
+                          {selectedAction?.apiName || ''}
                         </div>
                         <span
                           onClick={() => setMaskSensitive((m) => !m)}
@@ -4282,7 +4282,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           {maskSensitive ? "🔒 Masked" : "🔓 Visible"}
                         </span>
                       </div>
-                      {selectedAction.error && (
+                      {selectedAction?.error && (
                         <div
                           style={{
                             fontSize: 13,
@@ -4308,7 +4308,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                         }}
                       >
                         {(() => {
-                          const ps = selectedAction.params;
+                          const ps = selectedAction?.params;
                           if (!maskSensitive || !isSensitiveField(ps?.selector)) return JSON.stringify(ps, null, 2);
                           const masked = { ...ps };
                           if (masked.value) masked.value = "••••••";
@@ -4397,7 +4397,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       {showDetail ? "▾" : "▴"}
                     </div>
                   </div>
-                  {showDetail && selectedConsoleEvent && (
+                  {showDetail && (
                     <div
                       style={{
                         height: detailH,
@@ -4421,11 +4421,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           style={{
                             fontSize: 14,
                             fontWeight: 700,
-                            color: levelColors[selectedConsoleEvent.type] || V.textMid,
+                            color: levelColors[selectedConsoleEvent?.type] || V.textMid,
                             textTransform: "uppercase",
                           }}
                         >
-                          {selectedConsoleEvent.type}
+                          {selectedConsoleEvent?.type || ''}
                         </div>
                         <span
                           style={{
@@ -4435,7 +4435,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                             fontVariantNumeric: "tabular-nums",
                           }}
                         >
-                          {fmt(selectedConsoleEvent.time)}
+                          {selectedConsoleEvent ? fmt(selectedConsoleEvent.time) : ''}
                         </span>
                       </div>
                       <pre
@@ -4447,7 +4447,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           wordBreak: "break-word",
                         }}
                       >
-                        {selectedConsoleEvent.details || selectedConsoleEvent.text}
+                        {selectedConsoleEvent?.details || selectedConsoleEvent?.text || ''}
                       </pre>
                     </div>
                   )}
