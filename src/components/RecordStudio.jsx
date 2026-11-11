@@ -132,6 +132,98 @@ function shortUrl(url) {
 // this adapter shallow: it only names fields the existing inspector expects;
 // archive parsing, lifecycle folding, clock normalization, HAR conversion and
 // resource decoding all belong to player-core.
+// The audio of a recording as the player schedules it: every stretch of
+// sound with where it starts on the player's timeline. A recording's audio
+// times count from the recording's start; the timeline's from its first event.
+function audioView(recording) {
+  const audio = recording.format === "vibium" ? recording.audio : undefined;
+  if (!audio) return null;
+  const shift = recording.timeline.startTime || 0;
+  const sounds = [];
+  for (const track of audio.tracks || []) {
+    if (track.data) sounds.push({ id: track.id, kind: "heard", data: track.data, startTime: track.startMs - shift });
+  }
+  for (const clip of audio.clips || []) {
+    if (!clip.data) continue;
+    (clip.plays || []).forEach((play, i) => {
+      sounds.push({ id: `${clip.id}@${i}`, kind: "said", data: clip.data, startTime: play.startMs - shift });
+    });
+  }
+  return sounds.length ? { sounds } : null;
+}
+
+// Which sounds to start when playback begins at the playhead, and how:
+// seconds to wait before each, and seconds into it to begin. durations
+// maps a sound's id to its length in seconds.
+function scheduleSounds(sounds, durations, playhead, speed) {
+  const rate = speed > 0 ? speed : 1;
+  const out = [];
+  for (const sound of sounds || []) {
+    const seconds = durations.get(sound.id);
+    if (!seconds || playhead >= sound.startTime + seconds * 1000) continue;
+    out.push({
+      id: sound.id,
+      delay: Math.max(0, sound.startTime - playhead) / 1000 / rate,
+      offset: Math.max(0, playhead - sound.startTime) / 1000,
+    });
+  }
+  return out;
+}
+
+// The videos of a recording as the player shows them: each with the page it
+// filmed and where it starts on the player's timeline. As with audio, a
+// video's offset counts from the recording's start.
+function videoView(recording) {
+  const videos = recording.format === "vibium" ? recording.videos : undefined;
+  const shift = recording.timeline.startTime || 0;
+  const out = (videos || []).filter((video) => video.data).map((video) => {
+    const pageId = video.context ? `page@${video.context.toLowerCase()}` : undefined;
+    return {
+      file: video.file,
+      mimeType: video.mimeType,
+      data: video.data,
+      pageId,
+      startTime: video.offsetMs - shift,
+      duration: video.durationMs,
+      // What overlays are placed on, in place of a screenshot.
+      frame: { pageId, width: video.width, height: video.height },
+    };
+  });
+  return out.length ? out : null;
+}
+
+// A playhead this close to a video's first or last frame holds that frame.
+const VIDEO_EDGE_MS = 1000;
+
+// The video to show at the playhead and the second of it to show. Null
+// means the screenshots are shown: no video filmed the page, or the
+// playhead is outside the video.
+function videoAt(videos, playhead, pageId) {
+  for (const video of videos || []) {
+    if (pageId && video.pageId && video.pageId !== pageId) continue;
+    const at = playhead - video.startTime;
+    const length = video.duration ?? Infinity;
+    if (at < -VIDEO_EDGE_MS || at > length + VIDEO_EDGE_MS) continue;
+    return { video, seconds: Math.max(0, Math.min(at, length)) / 1000 };
+  }
+  return null;
+}
+
+// How a playing video is kept on the playhead. lead is how far ahead of it
+// the video is, in seconds. Far off, it jumps; a little off, it runs a
+// little slower or faster until it is back.
+function videoCorrection(lead, speed) {
+  const rate = speed > 0 ? speed : 1;
+  if (Math.abs(lead) > 0.3 * Math.max(1, rate)) return { seek: true, rate };
+  return { seek: false, rate: rate * (lead > 0.04 ? 0.9 : lead < -0.04 ? 1.1 : 1) };
+}
+
+// Where on the timeline a listen's reply began, when the recording says.
+function heardOnset(traceData, action) {
+  const onset = action?.result?.onsetMs;
+  return typeof onset === "number" ? onset - (traceData?.timelineStart || 0) : undefined;
+}
+
 function browserRecordingView(recording) {
   const browserEvents = recording.timeline.events;
   const contextOptions = recording.format === "vibium" ? recording.metadata.contextOptions : undefined;
@@ -146,6 +238,8 @@ function browserRecordingView(recording) {
       point: event.browser?.point,
       box: event.browser?.box,
       error: event.browser?.error,
+      // What the step returned: a listen's transcript is read from here.
+      result: event.data?.after?.result,
       startTime: event.time,
       endTime: event.endTime ?? event.time,
       duration: event.duration ?? Math.max(0, (event.endTime ?? event.time) - event.time),
@@ -229,8 +323,11 @@ function browserRecordingView(recording) {
       height: screenshots.find((screenshot) => screenshot.width && screenshot.height).height,
     },
     duration: recording.timeline.duration,
+    timelineStart: recording.timeline.startTime || 0,
     fileCount: recording.metadata.fileCount,
     eventCount: recording.metadata.eventCount,
+    audio: audioView(recording),
+    videos: videoView(recording),
   };
   view.skipIdleSegments = buildSkipIdleSegments(view);
   return view;
@@ -294,6 +391,7 @@ function actionColor(apiName) {
   if (n.includes("screenshot")) return brand.sunset;
   if (elementSetAction(apiName) || n.includes("check") || n.includes("assert")) return "#22c55e";
   if (n.includes("find") || n.includes("locator") || n.includes("getby")) return brand.grape;
+  if (isSpeechAction(apiName)) return n.endsWith("say") ? brand.magenta : "#22c55e";
   if (n.includes("text")) return brand.magenta;
   return brand.orange;
 }
@@ -316,11 +414,40 @@ function isSensitiveField(selector) {
   );
 }
 
-function humanizeAction(action, mask = true) {
+// What was said or heard, short enough for one caption.
+function quote(text) {
+  const t = String(text || "").trim();
+  return `“${t.length > 140 ? t.slice(0, 138) + "…" : t}”`;
+}
+
+function isSpeechAction(apiName) {
+  return /(^|[.:])speech\.(say|listen)$/i.test(apiName || "");
+}
+
+// The caption for a say or a listen. A listen is heard partway through
+// its step: until then the caption says it is listening. onset is where on
+// the timeline the reply began, when the recording says.
+function humanizeSpeech(action, at, onset) {
+  const n = (action.apiName || "").toLowerCase();
+  const p = action.params || {};
+  if (n.endsWith("say")) {
+    if (p.text) return "Say " + quote(p.text);
+    return p.file ? "Play " + String(p.file).split(/[\\/]/).pop() : "Say";
+  }
+  const heard = action.result?.text;
+  if (action.error) return "Heard nothing";
+  if (!heard) return "Listen";
+  if (typeof at === "number" && typeof onset === "number" && at < onset) return "Listening…";
+  return "Heard " + quote(heard);
+}
+
+function humanizeAction(action, mask = true, at, onset) {
   const n = (action.apiName || "").toLowerCase();
   const p = action.params || {};
   const sel = p.selector || "";
   const short = sel.length > 28 ? sel.slice(0, 26) + "…" : sel;
+
+  if (isSpeechAction(action.apiName)) return humanizeSpeech(action, at, onset);
 
   if (n.includes("navigate") || n.includes("goto")) {
     try {
@@ -360,6 +487,7 @@ function isHumanAction(apiName) {
   const n = (apiName || "").toLowerCase();
   return (
     !!elementSetAction(apiName) ||
+    isSpeechAction(apiName) ||
     n.includes("goto") ||
     n.includes("navigate") ||
     n.includes("click") ||
@@ -692,6 +820,66 @@ function normalizeActionCoords({ action, screenshot, viewport, dpr, imgW, imgH, 
   return best;
 }
 
+// The picture's own size, whether it is a screenshot or a video.
+function naturalSize(el) {
+  return { natW: el.naturalWidth || el.videoWidth || 1, natH: el.naturalHeight || el.videoHeight || 1 };
+}
+
+// A recording's video, held on the playhead. seconds is the moment of the
+// video to show, or null while the screenshots are shown. Paused, it shows
+// that frame. Playing, it runs by itself and is corrected when it strays.
+const PlayheadVideo = ({ src, seconds, playing, speed, elRef, onSize, onBroken }) => {
+  const ref = useRef(null);
+  const [ready, setReady] = useState(false);
+  const shown = seconds != null;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !ready) return;
+    if (!shown) {
+      el.pause();
+      return;
+    }
+    const lead = el.currentTime - seconds;
+    if (!playing) {
+      el.pause();
+      if (Math.abs(lead) > 0.001) el.currentTime = seconds;
+      return;
+    }
+    const fix = videoCorrection(lead, speed);
+    if (el.playbackRate !== fix.rate) el.playbackRate = fix.rate;
+    if (fix.seek && !el.seeking) el.currentTime = seconds;
+    // A video at its end stays there: play() would start it over.
+    if (el.paused && !el.ended) el.play().catch(() => {});
+  }, [seconds, shown, playing, speed, ready]);
+  return (
+    <video
+      ref={(el) => {
+        ref.current = el;
+        if (elRef) elRef.current = el;
+        // A video with sound keeps time by its sound, muted or not, and
+        // holding the sound's pitch makes a change of rate slow to take.
+        if (el) el.preservesPitch = false;
+      }}
+      src={src}
+      muted
+      playsInline
+      preload="auto"
+      onLoadedMetadata={(e) => {
+        setReady(true);
+        onSize?.(e.currentTarget);
+      }}
+      onError={onBroken}
+      style={{
+        maxWidth: "100%",
+        maxHeight: "100%",
+        objectFit: "contain",
+        borderRadius: 4,
+        display: shown ? "block" : "none",
+      }}
+    />
+  );
+};
+
 // Persistent cursor component — always visible, animates between positions
 const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerEl, layoutKey }) => {
   const [pos, setPos] = useState({ x: 0, y: 0, visible: false });
@@ -700,8 +888,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     const recalc = () => {
       if (!imgEl || !containerEl) return;
       if (!action || !action.point) return;
-      const natW = imgEl.naturalWidth || 1;
-      const natH = imgEl.naturalHeight || 1;
+      const { natW, natH } = naturalSize(imgEl);
       const cRect = containerEl.getBoundingClientRect();
       const iRect = imgEl.getBoundingClientRect();
       if (!iRect.width || !iRect.height) return;
@@ -747,8 +934,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   }, [layoutKey]);
   if (!action || !action.point || !imgEl || !containerEl) return null;
 
-  const natW = imgEl.naturalWidth || 1;
-  const natH = imgEl.naturalHeight || 1;
+  const { natW, natH } = naturalSize(imgEl);
 
   const cRect = containerEl.getBoundingClientRect();
   const iRect = imgEl.getBoundingClientRect();
@@ -860,6 +1046,12 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
   const [skipIdle, setSkipIdle] = useState(getPanelDefault("skip-idle", false));
+  const [sound, setSound] = useState(getPanelDefault("sound", true));
+  const [soundsReady, setSoundsReady] = useState(0);
+  const soundRef = useRef({ ctx: null, buffers: new Map(), sources: [], anchor: null });
+  const playheadNow = useRef(0);
+  const [videoUrls, setVideoUrls] = useState(() => new Map());
+  const [brokenVideos, setBrokenVideos] = useState([]);
   const [selectedAction, setSelectedAction] = useState(null);
   const [selectedPageId, setSelectedPageId] = useState(null);
   const [selectedConsoleEvent, setSelectedConsoleEvent] = useState(null);
@@ -1207,6 +1399,95 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     return () => cancelAnimationFrame(playRef.current);
   }, [isPlaying, traceData, speed, loop, skipIdle]);
 
+  // ─── Sound: what was said and heard, in step with the playhead ──────────
+  playheadNow.current = playhead;
+  useEffect(() => {
+    try {
+      localStorage.setItem("record-panel-sound", sound);
+    } catch {}
+  }, [sound]);
+  // Decode the recording's audio once, when it loads.
+  useEffect(() => {
+    const state = soundRef.current;
+    state.buffers = new Map();
+    const sounds = traceData?.audio?.sounds;
+    const AC = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+    if (!sounds || !AC) return;
+    let cancelled = false;
+    (async () => {
+      state.ctx = state.ctx || new AC();
+      const decoded = new Map(); // a clip played twice is decoded once
+      for (const item of sounds) {
+        try {
+          if (!decoded.has(item.data)) {
+            const bytes = item.data.buffer.slice(item.data.byteOffset, item.data.byteOffset + item.data.byteLength);
+            decoded.set(item.data, await state.ctx.decodeAudioData(bytes));
+          }
+          if (!cancelled) state.buffers.set(item.id, decoded.get(item.data));
+        } catch {
+          // A file that does not decode is skipped; the rest still play.
+        }
+      }
+      if (!cancelled) setSoundsReady((n) => n + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [traceData]);
+  // While playing, every sound is scheduled against the playhead. A jump of
+  // the playhead (a seek, a loop, skipped idle time) starts them again from there.
+  useEffect(() => {
+    const state = soundRef.current;
+    const stop = () => {
+      for (const source of state.sources) {
+        try {
+          source.stop();
+        } catch {}
+      }
+      state.sources = [];
+      state.anchor = null;
+    };
+    if (!isPlaying || !sound || !traceData?.audio || !state.ctx || !state.buffers.size) {
+      stop();
+      return;
+    }
+    const start = (from) => {
+      stop();
+      state.ctx.resume?.();
+      const durations = new Map([...state.buffers].map(([id, buffer]) => [id, buffer.duration]));
+      const now = state.ctx.currentTime;
+      for (const item of scheduleSounds(traceData.audio.sounds, durations, from, speed)) {
+        const source = state.ctx.createBufferSource();
+        source.buffer = state.buffers.get(item.id);
+        source.playbackRate.value = speed;
+        source.connect(state.ctx.destination);
+        source.start(now + item.delay, item.offset);
+        state.sources.push(source);
+      }
+      state.anchor = { at: performance.now(), playhead: from };
+    };
+    start(playheadNow.current);
+    const watch = setInterval(() => {
+      const expected = state.anchor.playhead + (performance.now() - state.anchor.at) * speed;
+      if (Math.abs(playheadNow.current - expected) > 300) start(playheadNow.current);
+    }, 200);
+    return () => {
+      clearInterval(watch);
+      stop();
+    };
+  }, [isPlaying, sound, speed, traceData, soundsReady]);
+
+  // ─── Video: each file of the recording gets an address to play from ─────
+  useEffect(() => {
+    const urls = new Map();
+    for (const video of traceData?.videos || []) {
+      urls.set(video, URL.createObjectURL(new Blob([video.data], { type: video.mimeType })));
+    }
+    setVideoUrls(urls);
+    setBrokenVideos([]);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [traceData]);
+
   // ─── Auto-scroll timeline to keep playhead visible ─────────────────────
   useEffect(() => {
     if (!scrollRef.current || !traceData) return;
@@ -1400,6 +1681,21 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     return best;
   }, [activePageId, playhead, traceData]);
 
+  // A video this browser cannot play is left out: its screenshots are shown.
+  const playableVideos = useMemo(
+    () => (traceData?.videos || []).filter((video) => videoUrls.has(video) && !brokenVideos.includes(video)),
+    [brokenVideos, traceData, videoUrls],
+  );
+  const shownVideo = useMemo(() => videoAt(playableVideos, playhead, activePageId), [activePageId, playableVideos, playhead]);
+
+  // What the preview shows, and what overlays are placed on.
+  const currentFrame = shownVideo ? shownVideo.video.frame : currentScreenshot;
+  const showsVideo = Boolean(shownVideo);
+  useEffect(() => {
+    // The picture changed element: place the overlays again.
+    setImgDims((dims) => ({ ...dims }));
+  }, [showsVideo]);
+
   const pageIds = useMemo(() => {
     if (!traceData) return [];
     return [...new Set([
@@ -1412,21 +1708,21 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const overlayAction = useMemo(() => {
     const action = selectedAction || currentAction;
     if (!action) return null;
-    if (!currentScreenshot || action.pageId !== currentScreenshot.pageId) return null;
+    if (!currentFrame || action.pageId !== currentFrame.pageId) return null;
     if (actionFilter !== "all" && !isHumanAction(action.apiName)) return null;
     if (isClickAction(action.apiName) && playhead >= (action.endTime || action.startTime || 0)) return null;
     if ((action.apiName || "").toLowerCase().includes("waitfor")) return null;
     return action;
-  }, [currentAction, currentScreenshot, playhead, selectedAction, actionFilter]);
+  }, [currentAction, currentFrame, playhead, selectedAction, actionFilter]);
 
   const activeContextOptions = useMemo(() => {
     if (!traceData) return undefined;
     const contextId = overlayAction?.contextId
-      ?? currentScreenshot?.contextId
+      ?? currentFrame?.contextId
       ?? traceData.pages?.find((page) => page.id === activePageId)?.contextId;
     return traceData.contexts?.find((context) => context.id === contextId)?.options
       ?? traceData.contextOptions?.options;
-  }, [activePageId, currentScreenshot, overlayAction, traceData]);
+  }, [activePageId, currentFrame, overlayAction, traceData]);
 
   const currentGroup = useMemo(() => {
     if (!traceData?.groups) return null;
@@ -2046,6 +2342,29 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             >
               {mobile ? "Skip" : "Skip idle"}
             </button>
+            {traceData?.audio && (
+              <button
+                onClick={() => setSound((on) => !on)}
+                title={sound ? "Sound is on: what was said and heard plays with the recording" : "Sound is off"}
+                aria-label="Sound"
+                aria-pressed={sound}
+                style={{
+                  background: sound ? V.orange + "18" : "none",
+                  border: sound ? `1px solid ${V.orange}40` : "1px solid transparent",
+                  color: sound ? V.orange : V.textDim,
+                  cursor: "pointer",
+                  padding: mobile ? "3px 6px" : "3px 8px",
+                  borderRadius: 6,
+                  fontSize: mobile ? 11 : 13,
+                  fontWeight: 700,
+                  outline: "none",
+                  whiteSpace: "nowrap",
+                  lineHeight: 1.2,
+                }}
+              >
+                Sound
+              </button>
+            )}
           </div>
 
           <div
@@ -2329,31 +2648,46 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 </span>
               </div>
             )}
-            {currentScreenshot?.url ? (
+            {/* A recording's video stays loaded and is shown while it covers the playhead. */}
+            {playableVideos.map((video) => (
+              <PlayheadVideo
+                key={video.file}
+                src={videoUrls.get(video)}
+                seconds={shownVideo?.video === video ? shownVideo.seconds : null}
+                playing={isPlaying}
+                speed={speed}
+                elRef={shownVideo?.video === video ? imgRef : undefined}
+                onSize={(el) => setImgDims({ w: el.clientWidth, h: el.clientHeight })}
+                onBroken={() => setBrokenVideos((broken) => [...broken, video])}
+              />
+            ))}
+            {shownVideo || currentScreenshot?.url ? (
               <>
-                <img
-                  ref={imgRef}
-                  src={currentScreenshot.url}
-                  onLoad={(e) => {
-                    setImgDims({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight });
-                  }}
-                  style={{
-                    maxWidth: "100%",
-                    maxHeight: "100%",
-                    objectFit: "contain",
-                    borderRadius: 4,
-                    display: "block",
-                  }}
-                  alt="trace screenshot"
-                />
+                {!shownVideo && (
+                  <img
+                    ref={imgRef}
+                    src={currentScreenshot.url}
+                    onLoad={(e) => {
+                      setImgDims({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight });
+                    }}
+                    style={{
+                      maxWidth: "100%",
+                      maxHeight: "100%",
+                      objectFit: "contain",
+                      borderRadius: 4,
+                      display: "block",
+                    }}
+                    alt="trace screenshot"
+                  />
+                )}
                 {overlayEnabled && (
                   <ActionOverlay
                     action={overlayAction}
-                    screenshot={currentScreenshot}
+                    screenshot={currentFrame}
                     viewport={
                       overlayAction?._snapshotMeta?.viewport ||
-                      (currentScreenshot?.width && currentScreenshot?.height
-                        ? { width: currentScreenshot.width, height: currentScreenshot.height }
+                      (currentFrame?.width && currentFrame?.height
+                        ? { width: currentFrame.width, height: currentFrame.height }
                         : activeContextOptions?.viewport || traceData?.fallbackViewport)
                     }
                     dpr={activeContextOptions?.deviceScaleFactor}
@@ -2369,15 +2703,15 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       const actions = traceData?.actions || [];
                       let best = null;
                       for (const a of actions) {
-                        if (a.point && a.pageId === currentScreenshot.pageId && (a.startTime || 0) <= playhead + 50) best = a;
+                        if (a.point && a.pageId === currentFrame.pageId && (a.startTime || 0) <= playhead + 50) best = a;
                       }
                       return best;
                     })()}
-                    screenshot={currentScreenshot}
+                    screenshot={currentFrame}
                     viewport={
                       overlayAction?._snapshotMeta?.viewport ||
-                      (currentScreenshot?.width && currentScreenshot?.height
-                        ? { width: currentScreenshot.width, height: currentScreenshot.height }
+                      (currentFrame?.width && currentFrame?.height
+                        ? { width: currentFrame.width, height: currentFrame.height }
                         : activeContextOptions?.viewport || traceData?.fallbackViewport)
                     }
                     dpr={activeContextOptions?.deviceScaleFactor}
@@ -2471,10 +2805,12 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     fontSize: 14,
                     fontWeight: 700,
                     color: actionColor(currentAction.apiName),
-                    whiteSpace: "nowrap",
+                    // A sentence that was said or heard may wrap; a command stays on one line.
+                    whiteSpace: isSpeechAction(currentAction.apiName) ? "normal" : "nowrap",
+                    textAlign: "center",
                   }}
                 >
-                  {humanizeAction(currentAction)}
+                  {humanizeAction(currentAction, true, playhead, heardOnset(traceData, currentAction))}
                 </span>
               </div>
             )}
@@ -3201,6 +3537,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                         ["Network", `${traceData.network.length} requests`],
                         ["Console", `${traceData.console.length} logs`],
                         ["Screenshots", `${traceData.screenshots.filter((s) => s.url).length} frames`],
+                        ...(traceData.videos || []).map((video) => [
+                          "Video",
+                          [video.duration != null && `${(video.duration / 1000).toFixed(1)}s`, video.frame.width && `${video.frame.width}×${video.frame.height}`]
+                            .filter(Boolean).join(" · ") || "yes",
+                        ]),
                         ["Events", `${traceData.eventCount}`],
                       ].map(([label, value], i) => (
                         <div
@@ -4268,6 +4609,11 @@ export const __recordStudioInternals = {
   buildSkipIdleSegments,
   humanizeAction,
   isHumanAction,
+  audioView,
+  scheduleSounds,
+  videoView,
+  videoAt,
+  videoCorrection,
   finiteTimelineTimes,
   normalizeActionCoords,
   browserRecordingView,
