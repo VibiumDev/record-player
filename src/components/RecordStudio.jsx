@@ -2198,7 +2198,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   // toolbar around as different recordings load.
   const hasSound = !!traceData?.audio?.sounds?.length;
   const soundTitle = !hasSound
-    ? "Sound is on, but this recording has no audio"
+    ? "No audio in this recording"
     : sound
       ? "Sound is on: what was said and heard plays with the recording"
       : "Sound is off";
