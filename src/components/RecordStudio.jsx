@@ -1176,6 +1176,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     if (!end) return;
     const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
     seenRef.current.add(key);
+    timersRef.current.forEach(clearTimeout); timersRef.current = [];
     const lum = screenshotLuminance(imgEl, [...path, end], imgLeft, imgTop, iRect.width, iRect.height);
     // The screenshot/video still shows the real pointer at the start of the
     // move, so the destination circle waits until the move would have arrived.
