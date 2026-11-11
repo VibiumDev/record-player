@@ -313,6 +313,34 @@ describe("RecordStudio console UI", () => {
     expect(await screen.findByText("Drag & drop or click to browse")).toBeInTheDocument();
   });
 
+  it("moves the time readout into the overflow menu when the toolbar is extremely narrow", async () => {
+    window.history.pushState({}, "", "/?i=v&t=h&c=v");
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        callback;
+        constructor(callback) {
+          this.callback = callback;
+        }
+        observe(el) {
+          const width = el.querySelector("[data-chevron]") ? 280 : 2000;
+          this.callback([{ contentRect: { width } }], this);
+        }
+        disconnect() {}
+      },
+    );
+    const traceLines = [
+      { type: "before", title: "Page.navigate", callId: "call@1", startTime: 0, class: "Page", method: "vibium:page.navigate", params: { url: "http://localhost:5173" } },
+      { type: "after", callId: "call@1", endTime: 100 },
+    ];
+
+    const { container } = render(<RecordStudio initialFile={await vibiumFile(traceLines)} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More options" }));
+    expect(container.querySelector("[data-time-readout]")).toBeNull();
+    expect(await screen.findByText("Time")).toBeInTheDocument();
+  });
+
   it("hides eject and the dark/light toggle when the player is embedded", async () => {    window.history.pushState({}, "", "/?i=v&t=h&c=v");
     const traceLines = [
       { type: "before", title: "Page.navigate", callId: "call@1", startTime: 0, class: "Page", method: "vibium:page.navigate", params: { url: "http://localhost:5173" } },
