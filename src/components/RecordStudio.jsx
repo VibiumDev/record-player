@@ -789,18 +789,7 @@ function parseUrlParams() {
   }
 }
 
-// ─── Action Overlay (cursor, highlight, ripple, caret) ──────────────────────
-const CURSOR_SVG = (
-  <svg
-    width="32"
-    height="32"
-    viewBox="0 0 24 24"
-    fill="none"
-    style={{ filter: "drop-shadow(1px 2px 3px rgba(0,0,0,0.5))" }}
-  >
-    <path d="M5 3l14 8-6.5 1.5L11 19z" fill="#fff" stroke="#000" strokeWidth="1.5" strokeLinejoin="round" />
-  </svg>
-);
+// ─── Action Overlay (highlight, ripple, caret) ──────────────────────────────
 
 // ─── Coordinate normalization helper ────────────────────────────────────────
 // Tries multiple coordinate bases + boost factors and picks the lowest-penalty fit.
