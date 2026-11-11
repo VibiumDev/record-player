@@ -7,7 +7,7 @@
 ## Done
 - Inspector panel no longer resizes during playback (the detail toggle's row stays on screen for every step).
 - In stacked mode the detail toggle sits at the left edge, clear of the centered timeline toggle.
-- Detail toggle is always visible; expanding it on a step with no detail data shows a blank panel.
+- Detail toggle is always visible; when expanded it stays open even on steps with no detail data (blank panel).
 - Full test suite green: 169/169.
 
 ## Done
