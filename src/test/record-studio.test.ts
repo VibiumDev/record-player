@@ -80,3 +80,36 @@ describe("RecordStudio coordinate boost inference", () => {
     expect(actions[0]._coordinateBoosts).toEqual([2]);
   });
 });
+
+describe("RecordStudio pointer and audio", () => {
+  const { isHumanAction, humanizePointer, wavPeaks, audibleSpans, buildSkipIdleSegments } = __recordStudioInternals as any;
+
+  function wav(samples: number[], rate = 1000) {
+    const buf = new ArrayBuffer(44 + samples.length * 2);
+    const dv = new DataView(buf);
+    const w = (o: number, t: string) => [...t].forEach((c, i) => dv.setUint8(o + i, c.charCodeAt(0)));
+    w(0, "RIFF"); dv.setUint32(4, 36 + samples.length * 2, true); w(8, "WAVE");
+    w(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+    w(36, "data"); dv.setUint32(40, samples.length * 2, true);
+    samples.forEach((v, i) => dv.setInt16(44 + i * 2, v, true));
+    return new Uint8Array(buf);
+  }
+
+  it("treats Vibium pointer moves and releases as user actions", () => {
+    expect(isHumanAction("vibium:hid.mouse_move")).toBe(true);
+    expect(isHumanAction("vibium:hid.mouse_release")).toBe(true);
+    expect(humanizePointer({ apiName: "vibium:hid.mouse_move", params: { inputs: [{ cmd: "mouse_move" }, { cmd: "mouse_move" }] } })).toBe("Pointer move ×2");
+    expect(humanizePointer({ apiName: "vibium:hid.mouse_move", params: { inputs: [{ cmd: "mouse_move" }, { cmd: "mouse_click" }] } })).toBe("Pointer click");
+  });
+
+  it("does not skip idle time while audio is audible", () => {
+    // 10s of silence at 1kHz with a loud stretch from 4s to 6s.
+    const samples = Array.from({ length: 10_000 }, (_, i) => (i >= 4000 && i < 6000 ? 16000 : 0));
+    const peaks = wavPeaks(wav(samples));
+    const audio = { sounds: [{ kind: "heard", startTime: 0, peaks }] };
+    expect(audibleSpans(audio)).toEqual([{ start: 4000, end: 6000 }]);
+    const segs = buildSkipIdleSegments({ duration: 10_000, actions: [], audio });
+    expect(segs).toEqual([{ start: 300, end: 3700, duration: 3400 }, { start: 6300, end: 9700, duration: 3400 }]);
+  });
+});
