@@ -1296,7 +1296,10 @@ function keepRowInView(el) {
   const r = el.getBoundingClientRect();
   const b = sc.getBoundingClientRect();
   if (r.top < b.top + 2 || r.bottom > b.bottom - 2) {
-    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // jsdom and some older embeds lack scrollIntoView; skip rather than crash.
+    if (typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
   }
 }
 
