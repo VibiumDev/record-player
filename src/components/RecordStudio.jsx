@@ -4169,7 +4169,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               </div>
 
               {/* Action detail */}
-              {selectedAction && activePanel === "actions" ? (
+              {activePanel === "actions" ? (
                 <>
                   {/* Detail divider with centered chevron */}
                   <div
@@ -4246,7 +4246,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       {showDetail ? "▾" : "▴"}
                     </div>
                   </div>
-                  {showDetail && (
+                  {showDetail && selectedAction && (
                     <div
                       style={{
                         height: detailH,
@@ -4318,13 +4318,10 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     </div>
                   )}
                 </>
-              ) : (
-                /* The toggle's row stays reserved so the panel can't resize mid-playback. */
-                <div style={{ height: mobile ? 24 : 9, flexShrink: 0 }} />
-              )}
+              ) : null}
 
               {/* Console detail */}
-              {selectedConsoleEvent && activePanel === "console" ? (
+              {activePanel === "console" ? (
                 <>
                   <div
                     onMouseDown={(e) => {
@@ -4400,7 +4397,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       {showDetail ? "▾" : "▴"}
                     </div>
                   </div>
-                  {showDetail && (
+                  {showDetail && selectedConsoleEvent && (
                     <div
                       style={{
                         height: detailH,
@@ -4455,10 +4452,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     </div>
                   )}
                 </>
-              ) : (
-                /* The toggle's row stays reserved so the panel can't resize mid-playback. */
-                <div style={{ height: mobile ? 24 : 9, flexShrink: 0 }} />
-              )}
+              ) : null}
             </div>
           </>
         ) : /* Collapsed side panel — expand chevron */
