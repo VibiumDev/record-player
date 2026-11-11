@@ -1,12 +1,14 @@
 # Roadmap
 
 ## Open
-- Cursor destination: a circle (not a box), shown only when the destination element has no bounding box to highlight.
+- Cursor destination: a circle (not a box), shown only when the destination element has no bounding box to highlight — implemented, needs a visual check in the preview.
 - Clicking play must leave the timeline and inspector panels exactly as the user left them (open or closed).
-- Inspector panel "bobs" up and down during playback in both stacked and side-by-side layouts — the step's extra-info toggle appears/disappears per step, resizing the panel.
-- In stacked mode the extra-info toggle overlaps/collides with the timeline toggle — they need clear separation.
-- 6 tests failing after the detail-pane and cursor changes — find the cause and fix. (Resolved: full suite 169/169 passing.)
-- Detail toggle must always be visible (no flashing); expanding it on a step with no detail data shows an empty panel.
+
+## Done
+- Inspector panel no longer resizes during playback (the detail toggle's row stays on screen for every step).
+- In stacked mode the detail toggle sits at the left edge, clear of the centered timeline toggle.
+- Detail toggle is always visible; expanding it on a step with no detail data shows a blank panel.
+- Full test suite green: 169/169.
 
 ## Done
 - Eject in the wide toolbar is icon-only (no "Eject" word); the name stays in its tooltip and accessible label.
