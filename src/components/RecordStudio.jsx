@@ -2731,9 +2731,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 gap: 6,
               }}
               aria-label="Eject"
+              title="Eject"
             >
               <LogOut size={mobile ? 15 : 16} strokeWidth={2} />
-              {!mobile && "Eject"}
             </button>
           )}
           {showCtl("theme") && (
