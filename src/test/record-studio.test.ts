@@ -68,3 +68,15 @@ describe("RecordStudio checkbox action names", () => {
     }
   });
 });
+
+describe("RecordStudio coordinate boost inference", () => {
+  it("infers a 2x boost when action coordinates fill only half the viewport", () => {
+    const { inferActionCoordinateBoosts } = __recordStudioInternals;
+    const actions: any[] = [
+      { point: { x: 600, y: 300 }, box: { x: 500, y: 300, width: 140, height: 40 } },
+      { point: { x: 100, y: 50 } },
+    ];
+    inferActionCoordinateBoosts(actions, { width: 1280, height: 720 });
+    expect(actions[0]._coordinateBoosts).toEqual([2]);
+  });
+});

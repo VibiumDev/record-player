@@ -1,3 +1,4 @@
+// @ts-nocheck -- test fixtures use loose shapes
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";

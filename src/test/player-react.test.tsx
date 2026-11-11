@@ -1,3 +1,4 @@
+// @ts-nocheck -- test fixtures use loose shapes
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecordPlayer } from "../packages/player-react";
