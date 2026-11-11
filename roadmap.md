@@ -4,6 +4,7 @@
 - (none)
 
 ## Done
+- Highlight (flashlight) moved from the far right of the wide toolbar into the playback-options group, right after Sound; layout and theme stay on the right.
 - Time readout moves into the overflow "⋯" menu when the toolbar is extremely narrow (it is the last thing to leave; the menu row shows the live time).
 - Toolbar option icons now match the menu icons (lucide: Repeat, Flashlight, Columns2/Rows3, Sun/Moon, LogOut) instead of text glyphs.
 - Sound option is always shown in the toolbar, even when the recording has no audio.
