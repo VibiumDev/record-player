@@ -1398,9 +1398,58 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
+// What shows while a recording is on its way: the logo on a turning record.
+// It turns 33⅓ times a minute, and stays still for a reader who asked for
+// less motion.
+function LoadingRecord({ V, size = 96 }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+      <style>{`@keyframes loading-record-turn{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.loading-record-disc{animation:none!important}}`}</style>
+      <div
+        className="loading-record-disc"
+        aria-hidden="true"
+        style={{
+          width: size,
+          height: size,
+          boxSizing: "border-box",
+          borderRadius: "50%",
+          border: `3px solid ${V.orange}`,
+          // The grooves, and a sheen that shows the turning.
+          background: `conic-gradient(from 0deg, transparent 0deg, ${V.orange}33 40deg, transparent 80deg, transparent 180deg, ${V.orange}22 220deg, transparent 260deg), repeating-radial-gradient(circle, ${V.bgCard} 0 3px, ${V.border} 3px 4px)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          animation: "loading-record-turn 1.8s linear infinite",
+        }}
+      >
+        <div
+          style={{
+            width: size * 0.6,
+            height: size * 0.6,
+            borderRadius: "50%",
+            background: V.bg,
+            border: `1px solid ${V.orange}`,
+            boxSizing: "border-box",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <img src={VIBIUM_LOGO_HI} alt="" style={{ height: size * 0.42, width: "auto" }} />
+        </div>
+      </div>
+      <div role="status" aria-live="polite" style={{ color: V.orange, fontSize: 14 }}>Loading record…</div>
+    </div>
+  );
+}
+
 const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, overlayEnabledProp, compact: compactProp, controls, ...restProps } = {}, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
-  const [loading, setLoading] = useState(false);
+  // A recording named by the caller or by the address is loading from the
+  // first paint, so the page never shows its empty state on the way.
+  const [loading, setLoading] = useState(
+    () => Boolean(initialFile) || (!hideGlobalChrome && Boolean(new URLSearchParams(window.location.search).get("record"))),
+  );
   const [error, setError] = useState(null);
   const [traceData, setTraceData] = useState(null);
   const [tweeRecording, setTweeRecording] = useState(null);
@@ -1744,13 +1793,19 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     const traceUrl = params.get("record");
     if (traceUrl) {
       const url = traceUrl.startsWith("http") ? traceUrl : `/${traceUrl}`;
+      // The download is most of the wait for a recording with video.
+      setLoading(true);
+      setError(null);
       fetch(url)
         .then((r) => {
           if (!r.ok) throw new Error(`Failed to fetch ${traceUrl}`);
           return r.blob();
         })
         .then((blob) => loadRecordingFile(blob, traceUrl))
-        .catch((e) => setError(e.message));
+        .catch((e) => {
+          setError(e.message);
+          setLoading(false);
+        });
     }
   }, [initialFile, loadRecordingFile]);
 
@@ -2266,9 +2321,27 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           }}
         >
           {label && <div style={{ fontSize: 13, fontWeight: 700, color: V.orange, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>}
-          {loading && <div style={{ color: V.orange, fontSize: 14 }}>Loading trace...</div>}
-          {error && <div style={{ color: "#ef4444", fontSize: 13 }}>Error: {error}</div>}
-          {!loading && !error && <div style={{ color: V.textDim, fontSize: 14 }}>Drop a zip file or waiting for file...</div>}
+          {loading && <LoadingRecord V={V} size={72} />}
+          {error && <div role="alert" style={{ color: "#ef4444", fontSize: 13 }}>Error: {error}</div>}
+          {!loading && !error && <div style={{ color: V.textDim, fontSize: 14 }}>Drop a recording here</div>}
+        </div>
+      );
+    }
+    if (loading) {
+      return (
+        <div
+          style={{
+            width: "100%",
+            height: "100vh",
+            background: V.bg,
+            color: V.text,
+            fontFamily: "'SF Mono', 'Fira Code', monospace",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <LoadingRecord V={V} size={120} />
         </div>
       );
     }
@@ -2384,7 +2457,6 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           </a>
         </div>
 
-        {loading && <div style={{ color: V.orange, fontSize: 16 }}>Loading trace...</div>}
         {error && (
           <div role="alert" style={{ color: "#ef4444", fontSize: 15, maxWidth: 400, textAlign: "center" }}>Error: {error}</div>
         )}
