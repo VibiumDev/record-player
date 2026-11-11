@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import { parseRecording } from "../packages/player-core";
 import { RecordPlayer } from "../packages/player-react";
-import { ScissorsLineDashed, Volume2, VolumeX, Ellipsis, Repeat, Flashlight, Gauge, Rows3, Columns2, Sun, Moon } from "lucide-react";
+import { ScissorsLineDashed, Volume2, VolumeX, Ellipsis, Repeat, Flashlight, Gauge, Rows3, Columns2, Sun, Moon, LogOut } from "lucide-react";
 
 /* Browser recording studio — archive decoding is provided by player-core. */
 
@@ -2204,8 +2204,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       : "Sound is off";
 
   // Options leave the toolbar in this order as it narrows (first = first to go).
-  const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed"];
+  // Eject is last: it is the way out, so it stays visible longest.
+  const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed", "eject"];
   const allowedCtl = (k) => {
+    // Eject is the way out of a recording, not an option — never gated by `controls`.
+    if (k === "eject") return !hideGlobalChrome;
     if (Array.isArray(controls) && !controls.includes(k)) return false;
     if (k === "layout") return !mobile && !forceLayout;
         return true;
