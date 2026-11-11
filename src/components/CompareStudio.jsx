@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import RecordStudio from "./RecordStudio";
+import { ScissorsLineDashed } from "lucide-react";
 
 const brand = {
   orange: "#f97316",
@@ -356,9 +357,12 @@ export default function CompareStudio() {
             fontWeight: 700,
             outline: "none",
             whiteSpace: "nowrap",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
-          {"\u23E9\uFE0E"}
+          <ScissorsLineDashed size={17} strokeWidth={2} />
         </button>
           <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
           <button
