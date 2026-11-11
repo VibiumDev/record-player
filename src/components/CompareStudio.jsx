@@ -337,6 +337,7 @@ export default function CompareStudio() {
               fontSize: 18,
               fontWeight: 700,
               outline: "none",
+              height: 35,
             }}
           >
         ⟲
@@ -357,6 +358,7 @@ export default function CompareStudio() {
             fontWeight: 700,
             outline: "none",
             whiteSpace: "nowrap",
+            height: 35,
           }}
         >
           <ScissorsLineDashed size={17} strokeWidth={2} style={{ verticalAlign: "middle" }} />
