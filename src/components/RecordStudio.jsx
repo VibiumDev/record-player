@@ -2419,7 +2419,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             >
               ⏭
             </button>
-            {(showCtl("loop") || showCtl("skip") || showCtl("sound")) && (
+            {(showCtl("loop") || showCtl("skip") || showCtl("sound") || showCtl("highlight")) && (
               <div style={{ width: 1, height: 16, background: V.border, margin: "0 10px" }} />
             )}
             {showCtl("loop") && (
