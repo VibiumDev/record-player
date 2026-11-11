@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import { parseRecording } from "../packages/player-core";
 import { RecordPlayer } from "../packages/player-react";
-import { ScissorsLineDashed } from "lucide-react";
+import { ScissorsLineDashed, Volume2, VolumeX } from "lucide-react";
 
 /* Browser recording studio — archive decoding is provided by player-core. */
 
@@ -2411,14 +2411,18 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                   cursor: "pointer",
                   padding: mobile ? "3px 6px" : "3px 8px",
                   borderRadius: 6,
-                  fontSize: mobile ? 11 : 13,
+                  fontSize: mobile ? 16 : 20,
                   fontWeight: 700,
                   outline: "none",
                   whiteSpace: "nowrap",
-                  lineHeight: 1.2,
+                  height: mobile ? undefined : 38,
                 }}
               >
-                Sound
+                {sound ? (
+                  <Volume2 size={mobile ? 15 : 18} strokeWidth={2} style={{ verticalAlign: "middle" }} />
+                ) : (
+                  <VolumeX size={mobile ? 15 : 18} strokeWidth={2} style={{ verticalAlign: "middle" }} />
+                )}
               </button>
             )}
           </div>
