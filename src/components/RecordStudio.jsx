@@ -396,7 +396,14 @@ const HID_MAX = 32767;
 // over its step. A click entry marks the point the pointer was at.
 function attachPointerPaths(actions, frame) {
   for (const a of actions || []) {
-    if (!isPointerAction(a.apiName)) continue;
+    if (!isPointerAction(a.apiName)) {
+      // A tap has no path to follow, but its destination is exact.
+      if (!a.point && isTapAction(a.apiName)) {
+        const x = Number(a.params?.x), y = Number(a.params?.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) a.point = { x, y };
+      }
+      continue;
+    }
     const inputs = Array.isArray(a.params?.inputs) ? a.params.inputs : [];
     const raw = [];
     for (const input of inputs) {
@@ -619,6 +626,11 @@ function quote(text) {
 // Low-level pointer input (Vibium hid.mouse_*): moves, presses, releases.
 function isPointerAction(apiName) {
   return /(^|[.:])((hid\.)?mouse[._]|pointer\.)(move|down|up|press|release|click|wheel)(\s*×\s*\d+)?$/i.test(apiName || "");
+}
+
+// A tap states its spot outright: its x/y params are where the finger landed.
+function isTapAction(apiName) {
+  return /(^|[.:])(touch[._](tap|press|release|click)|tap)$/i.test(apiName || "");
 }
 
 function humanizePointer(action) {
