@@ -1,10 +1,12 @@
 # Roadmap
 
 ## Open
-- Cursor destination: a circle (not a box), shown only when the destination element has no bounding box to highlight — implemented, needs a visual check in the preview.
-- Clicking play must leave the timeline and inspector panels exactly as the user left them (open or closed).
 
 ## Done
+- Destination circle appears on landing a step, then fades away after ~1.5s instead of lingering.
+- Drawn cursor stays hidden for the first half of a glide so it doesn't double up with the screenshot's real cursor at the path start.
+- Cursor destination: a circle (not a box), shown only when the destination element has no bounding box to highlight.
+- Clicking play leaves the timeline and inspector panels exactly as the user left them (open or closed).
 - Detail pane keeps showing the last step's info between actions instead of flashing blank.
 - Step and console rows no longer show the "page@hash" suffix.
 - Inspector panel no longer resizes during playback (the detail toggle's row stays on screen for every step).

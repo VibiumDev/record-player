@@ -1214,7 +1214,10 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
           const r = f - i;
           const a = m.path[i], b = m.path[i + 1];
           for (let j = 0; j <= Math.round(f); j++) if (m.path[j].click && !clicks.includes(j)) clicks.push(j);
-          setPos({ x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r, visible: true, instant: true });
+          // Keep the drawn cursor hidden for the first part of the move: the
+          // screenshot's real cursor is still at the path start there. It
+          // appears as the glide approaches the destination.
+          setPos({ x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r, visible: k >= 0.55, instant: true });
           setTrail({ points: m.path, upTo: f, fading: false, clicks: clicks.map((j) => m.path[j]), key, lum: m.lum });
           if (k < 1) rafRef.current = requestAnimationFrame(tick);
           else { animatingRef.current = false; setTrail((tr) => tr && { ...tr, fading: true }); }
