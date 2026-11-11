@@ -312,4 +312,19 @@ describe("RecordStudio console UI", () => {
 
     expect(await screen.findByText("Drag & drop or click to browse")).toBeInTheDocument();
   });
+
+  it("hides eject and the dark/light toggle when the player is embedded", async () => {
+    window.history.pushState({}, "", "/?i=v&t=h&c=v");
+    const traceLines = [
+      { type: "before", title: "Page.navigate", callId: "call@1", startTime: 0, class: "Page", method: "vibium:page.navigate", params: { url: "http://localhost:5173" } },
+      { type: "after", callId: "call@1", endTime: 100 },
+    ];
+
+    render(<RecordStudio initialFile={await vibiumFile(traceLines)} hideGlobalChrome />);
+
+    await screen.findByRole("button", { name: "Sound" });
+    expect(screen.queryByRole("button", { name: "Eject" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Light theme" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dark theme" })).not.toBeInTheDocument();
+  });
 });
