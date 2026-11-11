@@ -3298,10 +3298,6 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       onClick={() => {
                         setPlayhead(0);
                         setIsPlaying(true);
-                        if (!mobile && !compact) {
-                          setShowTimeline(true);
-                          setShowSide(true);
-                        }
                       }}
                       style={{
                         width: 80,
