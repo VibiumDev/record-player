@@ -1162,7 +1162,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
   useEffect(() => {
     if (!imgEl || !containerEl || !action?.point) { setDest(null); return; }
     const key = action?.callId ?? action?.id ?? `${action.point.x},${action.point.y}`;
-    if (seenRef.current.has(key)) return;
+    const seen = seenRef.current.has(key);
     const { natW, natH } = naturalSize(imgEl);
     const cRect = containerEl.getBoundingClientRect();
     const iRect = imgEl.getBoundingClientRect();
@@ -1176,6 +1176,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     const end = map(action.point);
     if (!end) return;
     setPos(end);
+    if (seen) return;
     const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
     seenRef.current.add(key);
     timersRef.current.forEach(clearTimeout); timersRef.current = [];
