@@ -1233,20 +1233,20 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [action?.callId, action?.point?.x, action?.point?.y, screenshot, viewport, dpr, imgEl, containerEl, layoutKey, glide]);
 
-  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+  useEffect(() => () => { cancelAnimationFrame(rafRef.current); clearTimeout(destTimerRef.current); }, []);
 
   // A step with nowhere to point (a wait, a listen) shows no destination.
   useEffect(() => {
-    if (!action?.point) setDest(null);
+    if (!action?.point) { setDest(null); setDestShown(false); }
   }, [action]);
 
   if (!pos.visible) return null;
   return (
     <>
       <style>{`@keyframes ov-ripple { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.6; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
-        @keyframes ov-dest { from { opacity: 0; transform: translate(-50%,-50%) scale(1.25); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+         @keyframes ov-dest { 0% { opacity: 0; transform: translate(-50%,-50%) scale(1.25); } 15% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-50%) scale(1); } }
         @keyframes ov-dest-ping { from { transform: scale(0.8); opacity: 0.75; } to { transform: scale(1.7); opacity: 0; } }`}</style>
-      {dest && glide && !action?.box && (() => {
+      {dest && destShown && glide && !action?.box && (() => {
         const look = outlineLook(dest.lum);
         return (
           <div
@@ -1255,7 +1255,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
               position: "absolute", left: dest.x, top: dest.y, width: POINTER_DEST_SIZE, height: POINTER_DEST_SIZE,
               transform: "translate(-50%,-50%)", borderRadius: "50%", border: `2px solid ${look.stroke}`,
               boxShadow: `0 0 18px ${look.glow}, inset 0 0 14px ${look.glow}`,
-              pointerEvents: "none", zIndex: 6, animation: "ov-dest 0.28s ease-out",
+              pointerEvents: "none", zIndex: 6, animation: "ov-dest 1.5s ease-out forwards",
             }}
           >
             <div style={{ position: "absolute", inset: -2, borderRadius: "50%", border: `2px solid ${look.stroke}`, pointerEvents: "none", animation: "ov-dest-ping 0.9s ease-out forwards" }} />
