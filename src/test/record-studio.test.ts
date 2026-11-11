@@ -99,6 +99,8 @@ describe("RecordStudio pointer and audio", () => {
   it("treats Vibium pointer moves and releases as user actions", () => {
     expect(isHumanAction("vibium:hid.mouse_move")).toBe(true);
     expect(isHumanAction("vibium:hid.mouse_release")).toBe(true);
+    expect(isHumanAction("Pointer.move ×16")).toBe(true);
+    expect(isHumanAction("Pointer.release")).toBe(true);
     expect(humanizePointer({ apiName: "vibium:hid.mouse_move", params: { inputs: [{ cmd: "mouse_move" }, { cmd: "mouse_move" }] } })).toBe("Pointer move ×2");
     expect(humanizePointer({ apiName: "vibium:hid.mouse_move", params: { inputs: [{ cmd: "mouse_move" }, { cmd: "mouse_click" }] } })).toBe("Pointer click");
   });

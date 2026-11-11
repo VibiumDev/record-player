@@ -285,7 +285,7 @@ function Waveform({ sounds, from, to, color, columns = 240, style }) {
     let d = "";
     for (let c = 0; c < columns; c++) {
       const h = Math.min(50, Math.sqrt(levels[c]) * 50); // sqrt so quiet speech is visible
-      if (h < 0.5) continue;
+      if (h < 1) continue;
       d += `M${c + 0.5} ${50 - h}V${50 + h}`;
     }
     return d;
@@ -591,7 +591,7 @@ function quote(text) {
 
 // Low-level pointer input (Vibium hid.mouse_*): moves, presses, releases.
 function isPointerAction(apiName) {
-  return /(^|[.:])(hid\.)?mouse[._](move|down|up|press|release|click|wheel)$/i.test(apiName || "");
+  return /(^|[.:])((hid\.)?mouse[._]|pointer\.)(move|down|up|press|release|click|wheel)(\s*×\s*\d+)?$/i.test(apiName || "");
 }
 
 function humanizePointer(action) {
