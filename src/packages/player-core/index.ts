@@ -1919,7 +1919,7 @@ async function parsePlaywrightRecording(
     // Lifecycle details such as assertion errors live on the `after` record;
     // expose them at the runner-step level so consumers do not need to replay
     // the lifecycle just to render an error badge.
-    const runner = { ...asRecord(event.data), ...asRecord(event.data).after };
+    const runner = { ...asRecord(event.data), ...asRecord(asRecord(event.data).after) };
     browser.data = {
       ...browser.data,
       parentId: runner.parentId ?? browser.data.parentId,
