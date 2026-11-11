@@ -1260,7 +1260,7 @@ function mergeCallLifecycles(events: RecordingEvent[]): RecordingEvent[] {
         time: numberFrom(log.time),
         message: typeof log.message === "string" ? log.message : undefined,
       });
-      opener.data = { ...opener.data, logs: [...sourceLogs, event.data] };
+      opener.data = { ...opener.data, logs: [...(sourceLogs as unknown[]), event.data] };
       opener.browser = { ...opener.browser, logs };
     }
   }
@@ -1919,7 +1919,7 @@ async function parsePlaywrightRecording(
     // Lifecycle details such as assertion errors live on the `after` record;
     // expose them at the runner-step level so consumers do not need to replay
     // the lifecycle just to render an error badge.
-    const runner = { ...event.data, ...asRecord(event.data).after };
+    const runner = { ...asRecord(event.data), ...asRecord(event.data).after };
     browser.data = {
       ...browser.data,
       parentId: runner.parentId ?? browser.data.parentId,
