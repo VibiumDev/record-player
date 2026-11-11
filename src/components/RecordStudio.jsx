@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import { parseRecording } from "../packages/player-core";
 import { RecordPlayer } from "../packages/player-react";
-import { ScissorsLineDashed, Volume2, VolumeX, Ellipsis, Repeat, Flashlight, Gauge, Rows3, Columns2, Sun, Moon } from "lucide-react";
+import { ScissorsLineDashed, Volume2, VolumeX, Ellipsis, Repeat, Flashlight, Gauge, Rows3, Columns2, Sun, Moon, LogOut } from "lucide-react";
 
 /* Browser recording studio — archive decoding is provided by player-core. */
 
@@ -2204,15 +2204,18 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       : "Sound is off";
 
   // Options leave the toolbar in this order as it narrows (first = first to go).
-  const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed"];
+  // Eject is last: it is the way out, so it stays visible longest.
+  const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed", "eject"];
   const allowedCtl = (k) => {
+    // Eject is the way out of a recording, not an option — never gated by `controls`.
+    if (k === "eject") return !hideGlobalChrome;
     if (Array.isArray(controls) && !controls.includes(k)) return false;
     if (k === "layout") return !mobile && !forceLayout;
         return true;
   };
   const allowedList = OVERFLOW_ORDER.filter(allowedCtl);
-  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108 };
-  const baseW = (mobile ? 260 : 420) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + (!hideGlobalChrome ? (mobile ? 36 : 90) : 0) + 60;
+  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108, eject: mobile ? 40 : 92 };
+  const baseW = (mobile ? 260 : 420) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + 60;
   let needW = baseW + allowedList.reduce((sum, k) => sum + CTL_W[k], 0) + 24;
   const hiddenCtl = new Set();
   for (const k of allowedList) {
@@ -2623,6 +2626,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       highlight: { icon: <Flashlight size={15} />, text: "Highlight", on: overlayEnabled, act: () => setOverlayEnabled(!overlayEnabled) },
                       layout: { icon: layoutMode === "stacked" ? <Rows3 size={15} /> : <Columns2 size={15} />, text: "Stacked layout", on: layoutMode === "stacked", act: () => setLayoutMode((m) => (m === "main" ? "stacked" : "main")) },
                       theme: { icon: dark ? <Sun size={15} /> : <Moon size={15} />, text: dark ? "Light theme" : "Dark theme", on: false, act: () => setDark(!dark) },
+                      eject: { icon: <LogOut size={15} />, text: "Eject", on: false, act: () => { setMoreOpen(false); setTraceData(null); setFileList([]); } },
                     }[k];
                     if (k === "speed") {
                       return (
@@ -2632,6 +2636,24 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           <input type="range" min={0.1} max={5} step={0.1} value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} style={{ width: 70, accentColor: V.orange, cursor: "pointer" }} />
                           <span style={{ minWidth: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{speed.toFixed(1)}×</span>
                         </div>
+                      );
+                     }
+                    if (k === "eject") {
+                      return (
+                        <button
+                          key={k}
+                          role="menuitem"
+                          onClick={row.act}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10, width: "100%",
+                            padding: "8px 10px", background: "none", border: "none",
+                            borderRadius: 6, color: V.textMid, cursor: "pointer",
+                            fontFamily: "inherit", fontSize: 13, textAlign: "left", outline: "none",
+                          }}
+                        >
+                          {row.icon}
+                          <span style={{ flex: 1 }}>{row.text}</span>
+                        </button>
                       );
                     }
                     return (
@@ -2657,7 +2679,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               )}
             </div>
           )}
-          {!hideGlobalChrome && (
+          {showCtl("eject") && (
             <button
               onClick={() => {
                 setTraceData(null);
