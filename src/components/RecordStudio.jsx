@@ -2354,7 +2354,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             </button>
             {!mobile && (
               <>
-                <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
+                <div style={{ width: 1, height: 16, background: V.border, margin: "0 10px" }} />
                 <button
                   onClick={() => setLoop(!loop)}
                   title={loop ? "Loop on" : "Loop off"}
@@ -2393,6 +2393,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 outline: "none",
                 whiteSpace: "nowrap",
                 height: mobile ? undefined : 38,
+                marginLeft: mobile ? 10 : undefined,
               }}
             >
               <ScissorsLineDashed size={mobile ? 15 : 18} strokeWidth={2} style={{ verticalAlign: "middle" }} />

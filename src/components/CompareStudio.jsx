@@ -323,7 +323,7 @@ export default function CompareStudio() {
           >
             ⏭
           </button>
-          <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
+          <div style={{ width: 1, height: 16, background: V.border, margin: "0 10px" }} />
           <button
             onClick={toggleLoop}
             title={loop ? "Loop on" : "Loop off"}
