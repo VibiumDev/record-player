@@ -1100,7 +1100,51 @@ const POINTER_GLIDE_MS = 600;
 const POINTER_TRAIL_FADE_MS = 1200;
 // Highlighter-pen look: a wide, soft, translucent band rather than a pen line.
 const POINTER_TRAIL_W = 14;
-const POINTER_TRAIL_OPACITY = 0.18;
+// Screenshot luminance thresholds (0..1) that decide how the band is inked.
+const POINTER_TRAIL_LIGHT_BG = 0.55;
+const POINTER_TRAIL_DARK_BG = 0.35;
+
+// Average brightness of the screenshot directly under the pointer's path.
+const trailLumCache = { key: "", data: null, w: 0, h: 0 };
+const screenshotLuminance = (imgEl, pts, imgLeft, imgTop, iW, iH) => {
+  try {
+    const src = imgEl.currentSrc || imgEl.src;
+    if (!src || !pts.length) return null;
+    const w = 48, h = 48;
+    if (trailLumCache.key !== src || !trailLumCache.data) {
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      const cx = c.getContext("2d", { willReadFrequently: true });
+      if (!cx) return null;
+      cx.drawImage(imgEl, 0, 0, w, h);
+      trailLumCache.key = src;
+      trailLumCache.data = cx.getImageData(0, 0, w, h).data; // throws if the canvas is tainted
+      trailLumCache.w = w; trailLumCache.h = h;
+    }
+    const { data } = trailLumCache;
+    let sum = 0, n = 0;
+    for (const pt of pts) {
+      const u = Math.min(1, Math.max(0, (pt.x - imgLeft) / iW));
+      const v = Math.min(1, Math.max(0, (pt.y - imgTop) / iH));
+      const px = Math.min(w - 1, Math.floor(u * w));
+      const py = Math.min(h - 1, Math.floor(v * h));
+      const o = (py * w + px) * 4;
+      sum += (0.2126 * data[o] + 0.7152 * data[o + 1] + 0.0722 * data[o + 2]) / 255;
+      n++;
+    }
+    return n ? sum / n : null;
+  } catch {
+    return null;
+  }
+};
+
+// Light screens get a denser, darker stroke; dark screens get a lighter one.
+const trailLook = (lum, color) => {
+  if (lum == null) return { stroke: color, opacity: 0.26, blend: "normal" };
+  if (lum > POINTER_TRAIL_LIGHT_BG) return { stroke: "#ea580c", opacity: 0.45, blend: "multiply" };
+  if (lum < POINTER_TRAIL_DARK_BG) return { stroke: "#fdba74", opacity: 0.5, blend: "screen" };
+  return { stroke: color, opacity: 0.3, blend: "normal" };
+};
 
 // Persistent cursor component — always visible, animates between positions.
 // For pointer actions it glides along the recorded path, leaving a fading
@@ -1128,7 +1172,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
       const end = map(action.point);
       if (!end) return null;
       const path = (action.pointerPath || []).map((pt) => ({ ...map(pt), click: pt.click })).filter((pt) => Number.isFinite(pt.x));
-      return { end, path };
+      return { end, path, lum: screenshotLuminance(imgEl, [...path, end], imgLeft, imgTop, iRect.width, iRect.height) };
     };
     const recalc = () => {
       const m = mapPoints();
@@ -1150,7 +1194,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
           const a = m.path[i], b = m.path[i + 1];
           for (let j = 0; j <= Math.round(f); j++) if (m.path[j].click && !clicks.includes(j)) clicks.push(j);
           setPos({ x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r, visible: true, instant: true });
-          setTrail({ points: m.path, upTo: f, fading: false, clicks: clicks.map((j) => m.path[j]), key });
+          setTrail({ points: m.path, upTo: f, fading: false, clicks: clicks.map((j) => m.path[j]), key, lum: m.lum });
           if (k < 1) rafRef.current = requestAnimationFrame(tick);
           else { animatingRef.current = false; setTrail((tr) => tr && { ...tr, fading: true }); }
         };
