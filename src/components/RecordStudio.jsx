@@ -2230,6 +2230,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   }
   const showCtl = (k) => allowedCtl(k) && !hiddenCtl.has(k);
   const menuCtl = allowedList.filter((k) => hiddenCtl.has(k)).reverse();
+  // The time readout and speed belong side by side in the menu: put speed right after time.
+  const timeAt = menuCtl.indexOf("time");
+  const speedAt = menuCtl.indexOf("speed");
+  if (timeAt !== -1 && speedAt !== -1 && speedAt !== timeAt + 1) {
+    menuCtl.splice(speedAt, 1);
+    menuCtl.splice(menuCtl.indexOf("time") + 1, 0, "speed");
+  }
   const anyMenuActive = menuCtl.some((k) => ({ loop, skip: skipIdle, sound, highlight: overlayEnabled, speed: speed !== 1, layout: layoutMode === "stacked", theme: false })[k]);
 
   return (
