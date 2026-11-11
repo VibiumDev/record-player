@@ -2393,7 +2393,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 lineHeight: 1.2,
               }}
             >
-              ⏩
+              {"\u23E9\uFE0E"}
             </button>
             {traceData?.audio && (
               <button

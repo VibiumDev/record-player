@@ -358,7 +358,7 @@ export default function CompareStudio() {
             whiteSpace: "nowrap",
           }}
         >
-          ⏩
+          {"\u23E9\uFE0E"}
         </button>
           <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
           <button
