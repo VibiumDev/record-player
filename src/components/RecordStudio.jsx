@@ -2209,6 +2209,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const allowedCtl = (k) => {
     // Eject is the way out of a recording, not an option — never gated by `controls`.
     if (k === "eject") return !hideGlobalChrome;
+    // Embedded players don't own the page theme, so the dark/light switch is hidden too.
+    if (k === "theme") return !hideGlobalChrome;
     if (Array.isArray(controls) && !controls.includes(k)) return false;
     if (k === "layout") return !mobile && !forceLayout;
         return true;
@@ -2702,6 +2704,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           {showCtl("theme") && (
             <button
               onClick={() => setDark(!dark)}
+              aria-label={dark ? "Light theme" : "Dark theme"}
               style={{
                 background: V.bgPanel,
                 border: `1px solid ${V.border}`,
