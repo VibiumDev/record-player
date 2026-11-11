@@ -115,6 +115,15 @@ describe("RecordStudio pointer and audio", () => {
     expect(a.point).toEqual({ x: 444, y: 486 });
   });
 
+  it("gives a tap its destination from its x/y params", () => {
+    const { attachPointerPaths } = __recordStudioInternals as any;
+    const tap: any = { apiName: "vibium:Page.touch.tap", params: { x: 70, y: 570 } };
+    const wait: any = { apiName: "vibium:Page.wait", params: { ms: 2000 } };
+    attachPointerPaths([tap, wait], { width: 444, height: 972 });
+    expect(tap.point).toEqual({ x: 70, y: 570 });
+    expect(wait.point).toBeUndefined();
+  });
+
   it("does not skip idle time while audio is audible", () => {
     // 10s of silence at 1kHz with a loud stretch from 4s to 6s.
     const samples = Array.from({ length: 10_000 }, (_, i) => (i >= 4000 && i < 6000 ? 16000 : 0));

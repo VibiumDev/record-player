@@ -1228,6 +1228,11 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
+  // A step with nowhere to point (a wait, a listen) shows no destination.
+  useEffect(() => {
+    if (!action?.point) setDest(null);
+  }, [action]);
+
   if (!pos.visible) return null;
   return (
     <>
