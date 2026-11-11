@@ -4215,8 +4215,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       style={{
                         position: "absolute",
                         top: "50%",
-                        left: "50%",
-                        transform: "translate(-50%, -50%)",
+                        left: layoutMode === "stacked" ? 14 : "50%",
+                        transform: layoutMode === "stacked" ? "translateY(-50%)" : "translate(-50%, -50%)",
                         width: 28,
                         height: 16,
                         borderRadius: 4,
@@ -4369,8 +4369,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       style={{
                         position: "absolute",
                         top: "50%",
-                        left: "50%",
-                        transform: "translate(-50%, -50%)",
+                        left: layoutMode === "stacked" ? 14 : "50%",
+                        transform: layoutMode === "stacked" ? "translateY(-50%)" : "translate(-50%, -50%)",
                         width: 28,
                         height: 16,
                         borderRadius: 4,
