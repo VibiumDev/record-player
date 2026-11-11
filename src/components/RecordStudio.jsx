@@ -2637,11 +2637,26 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           <span style={{ minWidth: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{speed.toFixed(1)}×</span>
                         </div>
                       );
+                     }
+                    if (k === "eject") {
+                      return (
+                        <button
+                          key={k}
+                          role="menuitem"
+                          onClick={row.act}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10, width: "100%",
+                            padding: "8px 10px", background: "none", border: "none",
+                            borderRadius: 6, color: V.textMid, cursor: "pointer",
+                            fontFamily: "inherit", fontSize: 13, textAlign: "left", outline: "none",
+                          }}
+                        >
+                          {row.icon}
+                          <span style={{ flex: 1 }}>{row.text}</span>
+                        </button>
+                      );
                     }
                     return (
-                      <button
-                        key={k}
-                        role="menuitemcheckbox"
                         aria-checked={row.on}
                         onClick={row.act}
                         style={{
