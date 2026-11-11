@@ -313,8 +313,7 @@ describe("RecordStudio console UI", () => {
     expect(await screen.findByText("Drag & drop or click to browse")).toBeInTheDocument();
   });
 
-  it("hides eject and the dark/light toggle when the player is embedded", async () => {
-    window.history.pushState({}, "", "/?i=v&t=h&c=v");
+  it("hides eject and the dark/light toggle when the player is embedded", async () => {    window.history.pushState({}, "", "/?i=v&t=h&c=v");
     const traceLines = [
       { type: "before", title: "Page.navigate", callId: "call@1", startTime: 0, class: "Page", method: "vibium:page.navigate", params: { url: "http://localhost:5173" } },
       { type: "after", callId: "call@1", endTime: 100 },

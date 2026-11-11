@@ -2491,6 +2491,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           {showCtl("time") && (
             <>
           <div
+            data-time-readout="1"
             style={{
               fontVariantNumeric: "tabular-nums",
               fontSize: mobile ? 14 : 18,
