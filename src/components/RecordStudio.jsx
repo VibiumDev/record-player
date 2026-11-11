@@ -1098,6 +1098,9 @@ const PlayheadVideo = ({ src, seconds, playing, speed, elRef, onSize, onBroken }
 // How long the cursor takes to glide along a pointer action's path when stepping.
 const POINTER_GLIDE_MS = 600;
 const POINTER_TRAIL_FADE_MS = 1200;
+// Highlighter-pen look: a wide, soft, translucent band rather than a pen line.
+const POINTER_TRAIL_W = 14;
+const POINTER_TRAIL_OPACITY = 0.18;
 
 // Persistent cursor component — always visible, animates between positions.
 // For pointer actions it glides along the recorded path, leaving a fading
