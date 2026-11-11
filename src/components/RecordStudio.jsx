@@ -265,6 +265,40 @@ function audibleSpans(audio, mergeMs = 400) {
   return merged;
 }
 
+// Waveform of the given sounds between two timeline times, as SVG bars.
+function Waveform({ sounds, from, to, color, columns = 240, style }) {
+  const path = useMemo(() => {
+    const span = to - from;
+    if (!(span > 0) || !sounds?.length) return "";
+    const levels = new Float32Array(columns);
+    for (const sound of sounds) {
+      const peaks = sound.peaks;
+      if (!peaks) continue;
+      for (let c = 0; c < columns; c++) {
+        const t0 = from + (c / columns) * span - sound.startTime;
+        const t1 = from + ((c + 1) / columns) * span - sound.startTime;
+        const i0 = Math.max(0, Math.floor(t0 / WAVE_BUCKET_MS));
+        const i1 = Math.min(peaks.length, Math.ceil(t1 / WAVE_BUCKET_MS));
+        for (let i = i0; i < i1; i++) if (peaks[i] > levels[c]) levels[c] = peaks[i];
+      }
+    }
+    let d = "";
+    for (let c = 0; c < columns; c++) {
+      const h = Math.min(50, Math.sqrt(levels[c]) * 50); // sqrt so quiet speech is visible
+      if (h < 0.5) continue;
+      d += `M${c + 0.5} ${50 - h}V${50 + h}`;
+    }
+    return d;
+  }, [sounds, from, to, columns]);
+  if (!path) return null;
+  return (
+    <svg viewBox={`0 0 ${columns} 100`} preserveAspectRatio="none" aria-hidden="true"
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", ...style }}>
+      <path d={path} stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke" fill="none" />
+    </svg>
+  );
+}
+
 function audioView(recording) {
   const audio = recording.format === "vibium" ? recording.audio : undefined;
   if (!audio) return null;
@@ -526,6 +560,7 @@ function actionColor(apiName) {
   if (elementSetAction(apiName) || n.includes("check") || n.includes("assert")) return "#22c55e";
   if (n.includes("find") || n.includes("locator") || n.includes("getby")) return brand.grape;
   if (isSpeechAction(apiName)) return n.endsWith("say") ? brand.magenta : "#22c55e";
+  if (isPointerAction(apiName)) return brand.blue;
   if (n.includes("text")) return brand.magenta;
   return brand.orange;
 }
@@ -4466,8 +4501,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               <div style={{ width: `${100 * zoom}%`, minWidth: "100%", position: "relative" }}>
                 {/* Proportional lane heights based on panel size */}
                 {(() => {
-                  const base = 94; // sum: 14+16+24+20+16 (ruler+groups+actions+network+console)
+                  const audioSounds = traceData.audio?.sounds || [];
+                  const hasAudioLane = audioSounds.some((x) => x.peaks);
+                  const base = 94 + (hasAudioLane ? 18 : 0); // sum: 14+16+24+20+16 (+18 audio)
                   const s = timelineH / base;
+                  const audioH = hasAudioLane ? Math.round(18 * s) : 0;
+                  const heardSounds = audioSounds.filter((x) => x.kind === "heard");
+                  const saidSounds = audioSounds.filter((x) => x.kind === "said");
                   const rulerH = Math.round(14 * s);
                   const groupsH = Math.round(16 * s);
                   const actionsH = Math.round(24 * s);
@@ -4629,12 +4669,23 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                                   transition: "background 0.15s",
                                 }}
                               >
+                                {isSpeechAction(a.apiName) && (
+                                  <Waveform
+                                    sounds={(a.apiName || "").toLowerCase().endsWith("say") ? saidSounds : heardSounds}
+                                    from={a.startTime}
+                                    to={a.endTime}
+                                    color={c}
+                                    columns={120}
+                                    style={{ opacity: 0.55 }}
+                                  />
+                                )}
                                 <span
                                   style={{
                                     fontSize,
                                     fontWeight: 600,
                                     color: a.error ? "#ef4444" : c,
                                     whiteSpace: "nowrap",
+                                    position: "relative",
                                   }}
                                 >
                                   {a.apiName?.split(".").pop()}
@@ -4644,6 +4695,17 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           })}
                         </div>
                       </div>
+
+                      {/* Audio lane */}
+                      {hasAudioLane && (
+                        <div style={{ height: audioH, position: "relative", borderBottom: `1px solid ${V.border}` }}>
+                          <div style={{ ...labelStyle, color: brand.magenta }}>Audio</div>
+                          <div style={{ ...laneContentStyle, overflow: "hidden" }}>
+                            <Waveform sounds={heardSounds} from={0} to={D} color={V.textMid} columns={Math.min(4000, Math.round(1200 * zoom))} />
+                            <Waveform sounds={saidSounds} from={0} to={D} color={brand.magenta} columns={Math.min(4000, Math.round(1200 * zoom))} />
+                          </div>
+                        </div>
+                      )}
 
                       {/* Network lane */}
                       <div style={{ height: networkH, position: "relative", borderBottom: `1px solid ${V.border}` }}>
@@ -4959,6 +5021,10 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 });
 
 export const __recordStudioInternals = {
+  wavPeaks,
+  audibleSpans,
+  humanizePointer,
+  isPointerAction,
   inferActionCoordinateBoosts,
   actionColor,
   advancePlayheadWithSkip,
