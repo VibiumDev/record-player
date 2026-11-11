@@ -5,6 +5,7 @@
 - Clicking play must leave the timeline and inspector panels exactly as the user left them (open or closed).
 - Inspector panel "bobs" up and down during playback in both stacked and side-by-side layouts — the step's extra-info toggle appears/disappears per step, resizing the panel.
 - In stacked mode the extra-info toggle overlaps/collides with the timeline toggle — they need clear separation.
+- 6 tests failing after the detail-pane and cursor changes — find the cause and fix.
 
 ## Done
 - Eject in the wide toolbar is icon-only (no "Eject" word); the name stays in its tooltip and accessible label.
