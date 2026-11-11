@@ -142,6 +142,25 @@ describe("RecordStudio console UI", () => {
     expect(skipIdle).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("shows the sound toggle even when the recording has no audio", async () => {
+    window.history.pushState({}, "", "/?i=h&t=h&c=v");
+    const traceLines = [
+      { type: "before", title: "Page.navigate", callId: "call@1", startTime: 0, class: "Page", method: "vibium:page.navigate", params: { url: "http://localhost:5173" } },
+      { type: "after", callId: "call@1", endTime: 100 },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+
+    render(<RecordStudio initialFile={await vibiumFile(traceLines.split("\n").map(JSON.parse))} hideGlobalChrome />);
+
+    const sound = await screen.findByRole("button", { name: "Sound" });
+    expect(sound).toHaveAttribute("aria-pressed", "true");
+    expect(sound).toHaveAttribute("title", "No audio in this recording");
+
+    fireEvent.click(sound);
+    expect(sound).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("shows the skip-idle toggle on mobile", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
