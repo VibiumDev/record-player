@@ -4166,7 +4166,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               </div>
 
               {/* Action detail */}
-              {selectedAction && activePanel === "actions" && (
+              {selectedAction && activePanel === "actions" ? (
                 <>
                   {/* Detail divider with centered chevron */}
                   <div
@@ -4315,10 +4315,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     </div>
                   )}
                 </>
+              ) : (
+                /* The toggle's row stays reserved so the panel can't resize mid-playback. */
+                <div style={{ height: mobile ? 24 : 9, flexShrink: 0 }} />
               )}
 
               {/* Console detail */}
-              {selectedConsoleEvent && activePanel === "console" && (
+              {selectedConsoleEvent && activePanel === "console" ? (
                 <>
                   <div
                     onMouseDown={(e) => {
@@ -4449,6 +4452,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                     </div>
                   )}
                 </>
+              ) : (
+                /* The toggle's row stays reserved so the panel can't resize mid-playback. */
+                <div style={{ height: mobile ? 24 : 9, flexShrink: 0 }} />
               )}
             </div>
           </>
