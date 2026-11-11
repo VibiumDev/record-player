@@ -1227,7 +1227,7 @@ const PersistentCursor = ({ action, screenshot, viewport, dpr, imgEl, containerE
       {pos && (
         <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"
           style={{ position: "absolute", left: pos.x, top: pos.y, pointerEvents: "none", zIndex: 7,
-            transition: glide ? `left ${POINTER_GLIDE_MS}ms cubic-bezier(0.4,0,0.2,1), top ${POINTER_GLIDE_MS}ms cubic-bezier(0.4,0,0.2,1)` : "none",
+            transition: `left ${POINTER_GLIDE_MS}ms cubic-bezier(0.4,0,0.2,1), top ${POINTER_GLIDE_MS}ms cubic-bezier(0.4,0,0.2,1)`,
             filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))" }}>
           <path d="M3 2l7 19 2.6-7.4L20 11z" fill="#fff" stroke="#111" strokeWidth="1.5" strokeLinejoin="round" />
         </svg>
