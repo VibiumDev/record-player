@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import { parseRecording } from "../packages/player-core";
 import { RecordPlayer } from "../packages/player-react";
-import { ScissorsLineDashed, Volume2, VolumeX } from "lucide-react";
+import { ScissorsLineDashed, Volume2, VolumeX, Ellipsis, Repeat, Flashlight, Gauge, Rows3, Columns2, Sun, Moon } from "lucide-react";
 
 /* Browser recording studio — archive decoding is provided by player-core. */
 
@@ -1087,7 +1087,7 @@ const ActionOverlay = forwardRef(function ActionOverlay(
   );
 });
 
-const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, overlayEnabledProp, compact: compactProp, ...restProps } = {}, _ref) {
+const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout, label, hideGlobalChrome, hideControls, overlayEnabledProp, compact: compactProp, controls, ...restProps } = {}, _ref) {
   const urlParams = useMemo(parseUrlParams, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1160,6 +1160,26 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     ro.observe(el);
     return () => ro.disconnect();
   });
+
+  // ─── Toolbar overflow (based on the player's own width, not the window) ──
+  const [toolbarEl, setToolbarEl] = useState(null);
+  const [toolbarW, setToolbarW] = useState(9999);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef(null);
+  useEffect(() => {
+    if (!toolbarEl) return;
+    const ro = new ResizeObserver(([entry]) => setToolbarW(entry.contentRect.width));
+    ro.observe(toolbarEl);
+    return () => ro.disconnect();
+  }, [toolbarEl]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e) => { if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setMoreOpen(false); };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("pointerdown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [moreOpen]);
 
   // ─── Mobile detection ─────────────────────────────────────────────────
   const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
@@ -2173,6 +2193,28 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
     ? `Skip idle (${fmt(skipIdleSavedMs)} skippable)`
     : "Skip idle";
 
+  // Options leave the toolbar in this order as it narrows (first = first to go).
+  const OVERFLOW_ORDER = ["theme", "layout", "highlight", "sound", "skip", "loop", "speed"];
+  const allowedCtl = (k) => {
+    if (Array.isArray(controls) && !controls.includes(k)) return false;
+    if (k === "sound") return !!traceData?.audio;
+    if (k === "layout") return !mobile && !forceLayout;
+        return true;
+  };
+  const allowedList = OVERFLOW_ORDER.filter(allowedCtl);
+  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108 };
+  const baseW = (mobile ? 260 : 420) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + (!hideGlobalChrome ? (mobile ? 36 : 90) : 0) + 60;
+  let needW = baseW + allowedList.reduce((sum, k) => sum + CTL_W[k], 0) + 24;
+  const hiddenCtl = new Set();
+  for (const k of allowedList) {
+    if (needW <= toolbarW) break;
+    hiddenCtl.add(k);
+    needW -= CTL_W[k];
+  }
+  const showCtl = (k) => allowedCtl(k) && !hiddenCtl.has(k);
+  const menuCtl = allowedList.filter((k) => hiddenCtl.has(k)).reverse();
+  const anyMenuActive = menuCtl.some((k) => ({ loop, skip: skipIdle, sound, highlight: overlayEnabled, speed: speed !== 1, layout: layoutMode === "stacked", theme: false })[k]);
+
   return (
     <div
       onDrop={handleDrop}
@@ -2195,14 +2237,15 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
       {/* ─── Top bar ───────────────────────────────────────────── */}
       {showToolbar && !hideControls ? (
         <div
+          ref={setToolbarEl}
           style={{
             height: mobile ? 52 : 66,
             background: V.bgCard,
             borderBottom: `1px solid ${V.border}`,
             display: "flex",
             alignItems: "center",
-            padding: mobile ? "0 8px" : "0 14px",
-            gap: mobile ? 6 : 12,
+            padding: mobile ? (toolbarW < 400 ? "0 4px" : "0 8px") : "0 14px",
+            gap: mobile ? (toolbarW < 400 ? 3 : 6) : 12,
             flexShrink: 0,
             position: "relative",
           }}
@@ -2352,9 +2395,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             >
               ⏭
             </button>
-            {!mobile && (
+            {(showCtl("loop") || showCtl("skip") || showCtl("sound")) && (
+              <div style={{ width: 1, height: 16, background: V.border, margin: "0 10px" }} />
+            )}
+            {showCtl("loop") && (
               <>
-                <div style={{ width: 1, height: 16, background: V.border, margin: "0 10px" }} />
                 <button
                   onClick={() => setLoop(!loop)}
                   title={loop ? "Loop on" : "Loop off"}
@@ -2375,8 +2420,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 </button>
               </>
             )}
-            <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />
-            <button
+            {showCtl("loop") && showCtl("skip") && <div style={{ width: 1, height: 16, background: V.border, margin: "0 2px" }} />}
+            {showCtl("skip") && <button
               onClick={() => setSkipIdle((enabled) => !enabled)}
               title={skipIdleTitle}
               aria-label="Skip idle"
@@ -2393,12 +2438,11 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 outline: "none",
                 whiteSpace: "nowrap",
                 height: mobile ? undefined : 38,
-                marginLeft: mobile ? 10 : undefined,
               }}
             >
               <ScissorsLineDashed size={mobile ? 15 : 18} strokeWidth={2} style={{ verticalAlign: "middle" }} />
-            </button>
-            {traceData?.audio && (
+            </button>}
+            {showCtl("sound") && (
               <button
                 onClick={() => setSound((on) => !on)}
                 title={sound ? "Sound is on: what was said and heard plays with the recording" : "Sound is off"}
@@ -2445,7 +2489,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
           </div>
           {!mobile && <span style={{ color: V.textDim, fontSize: 14 }}>/ {fmt(D)}</span>}
 
-          {!mobile && (
+          {showCtl("speed") && (
             <div
               style={{
                 display: "flex",
@@ -2483,7 +2527,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
 
           <div style={{ flex: 1 }} />
 
-          <button
+          {showCtl("highlight") && <button
             onClick={() => setOverlayEnabled(!overlayEnabled)}
             title={overlayEnabled ? "Disable highlight" : "Enable highlight"}
             style={{
@@ -2501,8 +2545,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             }}
           >
             🔦
-          </button>
-          {!mobile && !forceLayout && (
+          </button>}
+          {showCtl("layout") && (
             <button
               onClick={() => setLayoutMode((m) => (m === "main" ? "stacked" : "main"))}
               title={layoutMode === "main" ? "Stacked layout (V)" : "Default layout (V)"}
@@ -2522,6 +2566,87 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             >
               {layoutMode === "stacked" ? "▤" : "▥"}
             </button>
+          )}
+          {menuCtl.length > 0 && (
+            <div ref={moreRef} style={{ position: "relative" }}>
+              <button
+                onClick={() => setMoreOpen((o) => !o)}
+                title="More options"
+                aria-label="More options"
+                aria-expanded={moreOpen}
+                style={{
+                  background: anyMenuActive || moreOpen ? V.orange + "18" : "none",
+                  border: anyMenuActive || moreOpen ? `1px solid ${V.orange}40` : "1px solid transparent",
+                  color: anyMenuActive ? V.orange : V.textDim,
+                  cursor: "pointer",
+                  padding: "3px 8px",
+                  borderRadius: 6,
+                  height: mobile ? 32 : 38,
+                  display: "flex",
+                  alignItems: "center",
+                  outline: "none",
+                }}
+              >
+                <Ellipsis size={mobile ? 16 : 20} strokeWidth={2} />
+              </button>
+              {moreOpen && (
+                <div
+                  role="menu"
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    right: 0,
+                    minWidth: 200,
+                    background: V.bgCard,
+                    border: `1px solid ${V.border}`,
+                    borderRadius: 10,
+                    padding: 4,
+                    zIndex: 50,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+                    fontSize: 13,
+                  }}
+                >
+                  {menuCtl.map((k) => {
+                    const row = {
+                      loop: { icon: <Repeat size={15} />, text: "Loop", on: loop, act: () => setLoop(!loop) },
+                      skip: { icon: <ScissorsLineDashed size={15} />, text: "Skip idle", on: skipIdle, act: () => setSkipIdle((v) => !v) },
+                      sound: { icon: sound ? <Volume2 size={15} /> : <VolumeX size={15} />, text: "Sound", on: sound, act: () => setSound((v) => !v) },
+                      highlight: { icon: <Flashlight size={15} />, text: "Highlight", on: overlayEnabled, act: () => setOverlayEnabled(!overlayEnabled) },
+                      layout: { icon: layoutMode === "stacked" ? <Rows3 size={15} /> : <Columns2 size={15} />, text: "Stacked layout", on: layoutMode === "stacked", act: () => setLayoutMode((m) => (m === "main" ? "stacked" : "main")) },
+                      theme: { icon: dark ? <Sun size={15} /> : <Moon size={15} />, text: dark ? "Light theme" : "Dark theme", on: false, act: () => setDark(!dark) },
+                    }[k];
+                    if (k === "speed") {
+                      return (
+                        <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", color: speed !== 1 ? V.orange : V.textMid }}>
+                          <Gauge size={15} />
+                          <span style={{ flex: 1 }}>Speed</span>
+                          <input type="range" min={0.1} max={5} step={0.1} value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} style={{ width: 70, accentColor: V.orange, cursor: "pointer" }} />
+                          <span style={{ minWidth: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{speed.toFixed(1)}×</span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <button
+                        key={k}
+                        role="menuitemcheckbox"
+                        aria-checked={row.on}
+                        onClick={row.act}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 10, width: "100%",
+                          padding: "8px 10px", background: row.on ? V.orange + "18" : "none",
+                          border: "none", borderRadius: 6, color: row.on ? V.orange : V.textMid,
+                          cursor: "pointer", fontFamily: "inherit", fontSize: 13, textAlign: "left", outline: "none",
+                        }}
+                      >
+                        {row.icon}
+                        <span style={{ flex: 1 }}>{row.text}</span>
+                        {k !== "theme" && <span style={{ fontSize: 11, opacity: 0.8 }}>{row.on ? "On" : "Off"}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
           {!hideGlobalChrome && (
             <button
@@ -2543,7 +2668,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               {mobile ? "⏏" : "⏏ Eject"}
             </button>
           )}
-          {!mobile && (
+          {showCtl("theme") && (
             <button
               onClick={() => setDark(!dark)}
               style={{

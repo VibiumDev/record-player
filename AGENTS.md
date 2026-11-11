@@ -1,0 +1,1 @@
+- RecordStudio toolbar overflow is driven by the toolbar's own measured width (ResizeObserver), never window width, because the player is embedded in other sites; optional `controls` prop whitelists which option buttons can appear.
