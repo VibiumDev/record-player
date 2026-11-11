@@ -2214,8 +2214,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
         return true;
   };
   const allowedList = OVERFLOW_ORDER.filter(allowedCtl);
-  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108 };
-  const baseW = (mobile ? 260 : 420) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + (!hideGlobalChrome ? (mobile ? 36 : 90) : 0) + 60;
+  const CTL_W = { theme: 44, layout: 44, highlight: 44, sound: 44, skip: 44, loop: 44, speed: 108, eject: mobile ? 40 : 92 };
+  const baseW = (mobile ? 260 : 420) + (label ? 120 : 0) + (!mobile && !hideGlobalChrome ? 130 : 0) + 60;
   let needW = baseW + allowedList.reduce((sum, k) => sum + CTL_W[k], 0) + 24;
   const hiddenCtl = new Set();
   for (const k of allowedList) {
@@ -2626,6 +2626,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       highlight: { icon: <Flashlight size={15} />, text: "Highlight", on: overlayEnabled, act: () => setOverlayEnabled(!overlayEnabled) },
                       layout: { icon: layoutMode === "stacked" ? <Rows3 size={15} /> : <Columns2 size={15} />, text: "Stacked layout", on: layoutMode === "stacked", act: () => setLayoutMode((m) => (m === "main" ? "stacked" : "main")) },
                       theme: { icon: dark ? <Sun size={15} /> : <Moon size={15} />, text: dark ? "Light theme" : "Dark theme", on: false, act: () => setDark(!dark) },
+                      eject: { icon: <LogOut size={15} />, text: "Eject", on: false, act: () => { setMoreOpen(false); setTraceData(null); setFileList([]); } },
                     }[k];
                     if (k === "speed") {
                       return (
