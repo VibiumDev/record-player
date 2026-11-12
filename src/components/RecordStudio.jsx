@@ -1405,6 +1405,30 @@ const RECORD_TURN = `${(60 / 34).toFixed(4)}s`;
 // becomes when it is clicked, larger and in the middle of the page. The
 // ring and its glow grow with the size, from what they are at 48 px. It
 // stays still for a reader who asked for less motion.
+// The filmstrip's thumbnails take the shape most of the frames have, so
+// a phone's tall screens are not cut down to a landscape sliver.
+function filmstripShape(frames, measured) {
+  let tall = 0, wide = 0, tallSum = 0, wideSum = 0;
+  for (const f of frames) {
+    if (!(f.width > 0 && f.height > 0)) continue;
+    const a = f.width / f.height;
+    if (a < 1) { tall++; tallSum += a; } else { wide++; wideSum += a; }
+  }
+  const aspect = tall + wide === 0 ? measured || 1.6 : tall > wide ? tallSum / tall : wideSum / wide;
+  const height = aspect < 1 ? 64 : 40;
+  return { aspect, height, width: Math.round(Math.max(24, Math.min(96, height * aspect))) };
+}
+
+// The hover preview keeps the frame's own shape inside the room above
+// the filmstrip: 320 wide at most, and never taller than that room.
+function previewSize(aspect, room) {
+  const a = aspect > 0 ? aspect : 1.6;
+  const maxH = Math.max(120, Math.min(480, room));
+  let width = 320, height = width / a;
+  if (height > maxH) { height = maxH; width = height * a; }
+  return { width: Math.round(width), height: Math.round(height) };
+}
+
 function LoadingRecord({ V, size = 96 }) {
   const ring = size / 16;
   return (
@@ -1468,6 +1492,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
   const [actionFilter, setActionFilter] = useState("human");
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const [hoveredThumb, setHoveredThumb] = useState(null);
+  const [filmMeasured, setFilmMeasured] = useState(null); // a frame's shape as loaded, for traces that give no sizes
   const [fileList, setFileList] = useState([]);
   const [dark, setDark] = useState(true);
   const [overlayEnabledLocal, setOverlayEnabledLocal] = useState(true);
@@ -4651,13 +4676,16 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             </div>
           </div>
           {/* Filmstrip — hidden on mobile */}
-          {!mobile && !compact && traceData.screenshots.filter((s) => s.url && (activePageId ? s.pageId === activePageId : !s.pageId)).length > 0 && (
+          {!mobile && !compact && traceData.screenshots.filter((s) => s.url && (activePageId ? s.pageId === activePageId : !s.pageId)).length > 0 && (() => {
+            const filmFrames = traceData.screenshots.filter((s) => s.url && (activePageId ? s.pageId === activePageId : !s.pageId));
+            const film = filmstripShape(filmFrames, filmMeasured && filmMeasured.trace === traceData ? filmMeasured.aspect : null);
+            return (
             <div
               ref={filmstripRef}
               className="hide-scrollbar"
               onScroll={() => setHoveredThumb(null)}
               style={{
-                height: 56,
+                height: film.height + 16,
                 background: V.bgPanel,
                 borderTop: `1px solid ${V.border}`,
                 display: "flex",
@@ -4669,8 +4697,7 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                 position: "relative",
               }}
             >
-              {traceData.screenshots
-                .filter((s) => s.url && (activePageId ? s.pageId === activePageId : !s.pageId))
+              {filmFrames
                 .map((s, i) => {
                   const active = currentScreenshot === s;
                   return (
@@ -4695,12 +4722,14 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                       }}
                       onMouseEnter={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
-                        setHoveredThumb({ url: s.url, x: rect.left + rect.width / 2, y: rect.top });
+                        const img = e.currentTarget.querySelector("img");
+                        const aspect = img && img.naturalWidth > 0 && img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : film.aspect;
+                        setHoveredThumb({ url: s.url, x: rect.left + rect.width / 2, y: rect.top, aspect });
                       }}
                       onMouseLeave={() => setHoveredThumb(null)}
                       style={{
-                        width: 64,
-                        height: 40,
+                        width: film.width,
+                        height: film.height,
                         flexShrink: 0,
                         borderRadius: 4,
                         overflow: "hidden",
@@ -4709,7 +4738,19 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                         boxShadow: active ? `0 0 16px ${V.orange}60` : "none",
                       }}
                     >
-                      <img src={s.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt="" />
+                      <img
+                        src={s.url}
+                        onLoad={
+                          i === 0
+                            ? (e) => {
+                                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                                if (w > 0 && h > 0 && !(filmMeasured && filmMeasured.trace === traceData)) setFilmMeasured({ trace: traceData, aspect: w / h });
+                              }
+                            : undefined
+                        }
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        alt=""
+                      />
                     </div>
                   );
                 })}
@@ -4717,7 +4758,8 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
               {/* Hover preview */}
               {hoveredThumb &&
                 (() => {
-                  const previewW = 320;
+                  const preview = previewSize(hoveredThumb.aspect, hoveredThumb.y - 24);
+                  const previewW = preview.width;
                   const centerX = hoveredThumb.x;
                   const left = Math.max(8, Math.min(centerX - previewW / 2, window.innerWidth - previewW - 8));
                   return (
@@ -4736,12 +4778,13 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                         zIndex: 100,
                       }}
                     >
-                      <img src={hoveredThumb.url} style={{ width: "100%", display: "block" }} alt="" />
+                      <img src={hoveredThumb.url} style={{ width: "100%", height: preview.height, objectFit: "contain", display: "block" }} alt="" />
                     </div>
                   );
                 })()}
             </div>
-          )}
+            );
+          })()}
           <div style={{ height: timelineH, flexShrink: 0, background: V.bg, overflow: "hidden" }}>
             <div
               ref={scrollRef}
@@ -5305,6 +5348,8 @@ export const __recordStudioInternals = {
   finiteTimelineTimes,
   normalizeActionCoords,
   browserRecordingView,
+  filmstripShape,
+  previewSize,
 };
 
 export default RecordStudio;
