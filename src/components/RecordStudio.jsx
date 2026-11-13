@@ -1429,6 +1429,11 @@ function previewSize(aspect, room) {
   return { width: Math.round(width), height: Math.round(height) };
 }
 
+// The ring around the logo: a little wider than the circle the logo's
+// corners sweep as it turns (about 1.07 of its width), so a gap shows
+// between the two.
+const ringSize = (size) => Math.round(size * 1.3);
+
 function LoadingRecord({ V, size = 96 }) {
   const ring = size / 16;
   return (
@@ -1437,8 +1442,8 @@ function LoadingRecord({ V, size = 96 }) {
       <div
         aria-hidden="true"
         style={{
-          width: size,
-          height: size,
+          width: ringSize(size),
+          height: ringSize(size),
           borderRadius: "50%",
           display: "flex",
           alignItems: "center",
@@ -2408,8 +2413,9 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
             onMouseEnter={() => { setLogoHovering(true); logoPlayAudio(); }}
             onMouseLeave={() => { setLogoHovering(false); if (!logoSpinning) logoPauseAudio(); }}
             style={{
-              width: 48,
-              height: 48,
+              width: ringSize(48),
+              height: ringSize(48),
+              margin: (48 - ringSize(48)) / 2,
               borderRadius: "50%",
               display: "flex",
               alignItems: "center",
