@@ -1,4 +1,11 @@
 import "@testing-library/jest-dom";
+import { configure } from "@testing-library/react";
+
+// findBy* and waitFor give up after one second by default, less than a
+// recording takes to load and render on a slower machine such as a
+// Raspberry Pi. Five seconds keeps the tests about what the player does,
+// not how fast the machine is.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom's localStorage in this environment lacks working methods (clear/getItem
 // are undefined), so provide an in-memory Storage shim for tests that use it.
