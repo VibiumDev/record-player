@@ -10,6 +10,8 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["src/test/visual/**"],
+    // A test may wait several times for the player to render (see setup.ts).
+    testTimeout: 20000,
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
