@@ -4,7 +4,7 @@ import JSZip from "jszip";
 import { parseRecording } from "../packages/player-core";
 import { __recordStudioInternals } from "../components/RecordStudio";
 
-const { audioView, browserRecordingView, humanizeAction, isHumanAction, scheduleSounds } = __recordStudioInternals;
+const { audioView, browserRecordingView, humanizeAction, isHumanAction, scheduleSounds, stepDetail } = __recordStudioInternals;
 
 // A recording of one question and its answer, as Vibium writes it: the
 // steps in the trace, and the audio beside it with a manifest.
@@ -89,6 +89,32 @@ describe("playing a recording's audio", () => {
     expect(scheduleSounds(sounds, durations, 100, 2)[1]).toEqual({ id: "clip", delay: 0.25, offset: 0 });
     // Past everything: nothing plays.
     expect(scheduleSounds(sounds, durations, 60_000, 1)).toEqual([]);
+  });
+});
+
+describe("a step's detail", () => {
+  it("prints the result beside the parameters", async () => {
+    const view = browserRecordingView(await parseRecording(await speechZip()));
+    const [tap, say, listen] = view.actions;
+    // What a listen heard is in its result, not its parameters.
+    const heard = stepDetail(listen);
+    expect(JSON.parse(heard.params)).toEqual({ timeout: 15000 });
+    expect(JSON.parse(heard.result)).toMatchObject({ text: "Come here, Watson.", latencyMs: 4610 });
+    expect(JSON.parse(stepDetail(say).result)).toMatchObject({ clip: "out-0001" });
+    // A step with no result has none to print.
+    expect(stepDetail(tap).result).toBeNull();
+    expect(stepDetail({ params: { x: 1 }, result: {} }).result).toBeNull();
+  });
+
+  it("hides what a sensitive field gave back while masking is on", () => {
+    const read = { params: { selector: "#password", value: "hunter2" }, result: { value: "hunter2" } };
+    expect(stepDetail(read)).toEqual({ params: JSON.stringify({ selector: "#password", value: "••••••" }, null, 2), result: "••••••" });
+    expect(JSON.parse(stepDetail(read, false).result)).toEqual({ value: "hunter2" });
+  });
+
+  it("cuts a very long string", () => {
+    const page = stepDetail({ params: {}, result: { text: "a".repeat(5000) } });
+    expect(JSON.parse(page.result).text).toHaveLength(2001);
   });
 });
 
