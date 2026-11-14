@@ -628,6 +628,14 @@ function clipLong(value) {
   return value;
 }
 
+// The text a step heard or read goes first in its result: it is what a
+// person looks for, and the pane is short.
+function textFirst(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result) || !("text" in result)) return result;
+  const { text, ...rest } = result;
+  return { text, ...rest };
+}
+
 // What the detail pane prints for a step: its parameters, and its result
 // when it has one. A step on a sensitive field hides both its value and
 // what came back while masking is on.
@@ -640,7 +648,7 @@ function stepDetail(action, mask = true) {
     result === undefined || result === null || (typeof result === "object" && Object.keys(result).length === 0);
   return {
     params: JSON.stringify(clipLong(params), null, 2),
-    result: empty ? null : sensitive ? "••••••" : JSON.stringify(clipLong(result), null, 2),
+    result: empty ? null : sensitive ? "••••••" : JSON.stringify(clipLong(textFirst(result)), null, 2),
   };
 }
 
