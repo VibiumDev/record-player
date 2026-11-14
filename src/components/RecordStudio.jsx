@@ -617,6 +617,33 @@ function isSensitiveField(selector) {
   );
 }
 
+// A long string is cut for the detail pane, so a page's whole text does
+// not fill it.
+function clipLong(value) {
+  if (typeof value === "string") return value.length > 2000 ? value.slice(0, 2000) + "…" : value;
+  if (Array.isArray(value)) return value.map(clipLong);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, clipLong(v)]));
+  }
+  return value;
+}
+
+// What the detail pane prints for a step: its parameters, and its result
+// when it has one. A step on a sensitive field hides both its value and
+// what came back while masking is on.
+function stepDetail(action, mask = true) {
+  const sensitive = mask && isSensitiveField(action?.params?.selector);
+  let params = action?.params;
+  if (sensitive && params?.value) params = { ...params, value: "••••••" };
+  const result = action?.result;
+  const empty =
+    result === undefined || result === null || (typeof result === "object" && Object.keys(result).length === 0);
+  return {
+    params: JSON.stringify(clipLong(params), null, 2),
+    result: empty ? null : sensitive ? "••••••" : JSON.stringify(clipLong(result), null, 2),
+  };
+}
+
 // What was said or heard, short enough for one caption.
 function quote(text) {
   const t = String(text || "").trim();
@@ -4414,14 +4441,35 @@ const RecordStudio = forwardRef(function RecordStudio({ initialFile, forceLayout
                           wordBreak: "break-all",
                         }}
                       >
-                        {(() => {
-                          const ps = detailAction?.params;
-                          if (!maskSensitive || !isSensitiveField(ps?.selector)) return JSON.stringify(ps, null, 2);
-                          const masked = { ...ps };
-                          if (masked.value) masked.value = "••••••";
-                          return JSON.stringify(masked, null, 2);
-                        })()}
+                        {stepDetail(detailAction, maskSensitive).params}
                       </pre>
+                      {stepDetail(detailAction, maskSensitive).result !== null && (
+                        <>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: V.textDim,
+                              margin: "8px 0 2px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                            }}
+                          >
+                            Result
+                          </div>
+                          <pre
+                            data-testid="step-result"
+                            style={{
+                              fontSize: 12,
+                              color: V.textMid,
+                              margin: 0,
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            {stepDetail(detailAction, maskSensitive).result}
+                          </pre>
+                        </>
+                      )}
                     </div>
                   )}
                 </>
@@ -5345,6 +5393,7 @@ export const __recordStudioInternals = {
   advancePlayheadWithSkip,
   buildSkipIdleSegments,
   humanizeAction,
+  stepDetail,
   isHumanAction,
   audioView,
   scheduleSounds,
