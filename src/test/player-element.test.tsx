@@ -193,9 +193,9 @@ describe("player-element", () => {
     element.addEventListener("error", nativeErrorHandler);
 
     document.body.appendChild(element);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // A slower machine takes longer than a fixed pause to fail the load.
+    await vi.waitFor(() => expect(errorHandler).toHaveBeenCalledTimes(1), { timeout: 5000 });
 
-    expect(errorHandler).toHaveBeenCalledTimes(1);
     expect(nativeErrorHandler).toHaveBeenCalledTimes(1);
     expect(errorHandler.mock.calls[0][0].detail.error).toBeInstanceOf(Error);
     element.setAttribute("timeline", "hidden");
