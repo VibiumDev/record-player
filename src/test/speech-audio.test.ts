@@ -106,6 +106,14 @@ describe("a step's detail", () => {
     expect(stepDetail({ params: { x: 1 }, result: {} }).result).toBeNull();
   });
 
+  it("puts the text first in a result", () => {
+    const heard = stepDetail({ params: {}, result: { audioEndMs: 9, latencyMs: 4610, provider: "openai", text: "Come here, Watson." } });
+    expect(Object.keys(JSON.parse(heard.result))).toEqual(["text", "audioEndMs", "latencyMs", "provider"]);
+    expect(heard.result.split("\n")[1]).toContain("Come here, Watson.");
+    // A result with no text keeps its order.
+    expect(Object.keys(JSON.parse(stepDetail({ params: {}, result: { clip: "out-0001", durationMs: 5 } }).result))).toEqual(["clip", "durationMs"]);
+  });
+
   it("hides what a sensitive field gave back while masking is on", () => {
     const read = { params: { selector: "#password", value: "hunter2" }, result: { value: "hunter2" } };
     expect(stepDetail(read)).toEqual({ params: JSON.stringify({ selector: "#password", value: "••••••" }, null, 2), result: "••••••" });
